@@ -16,14 +16,16 @@ Yongyi Xie xyy0208@bu.edu
 	A group of four students, two boys, and two girls, live in one studio, with boys needing space to play together, girls gossiping together, and everyone get privacies. They also need some space for group work. They want the furniture arranged in a way that accommodates everyone’s needs without making the space feel cramped or chaotic.
 
 ## References
-[1] L. Yanhua, “Optimizing Space with AI: Intelligent Design Solutions for Soft Furnishings and Decor,” International Journal of Science and Engineering 	Applications, vol. 13, no. 7, Jun. 2024, doi: https://doi.org/10.7753/ijsea1307.1008
+[1] L. Yanhua, “Optimizing Space with AI: Intelligent Design Solutions for Soft Furnishings and Decor,” International Journal of Science and Engineering Applications, vol. 13, no. 7, Jun. 2024, doi: https://doi.org/10.7753/ijsea1307.1008
 
-[2] S. I. Mohamed, M. M. Saady, and Z. A. E. H. Taha, “Virtual Utopia: AI-Enhanced 3D Room Design Simulation for Optimal Furniture Layout,” 2024 Intelligent 	Methods, Systems, and Applications (IMSA), pp. 489–494, Jul. 2024, doi: https://doi.org/10.1109/imsa61967.2024.10652795
+[2] S. I. Mohamed, M. M. Saady, and Z. A. E. H. Taha, “Virtual Utopia: AI-Enhanced 3D Room Design Simulation for Optimal Furniture Layout,” 2024 Intelligent Methods, Systems, and Applications (IMSA), pp. 489–494, Jul. 2024, doi: https://doi.org/10.1109/imsa61967.2024.10652795
 
-[3] Z. Wang et al., “Navigating Indoor Spaces Using Machine Learning,” Machine 	Learning and the City, pp. 293–296, May 2022, doi: https://doi.org/10.1002/9781119815075.ch23
+[3] A. Penn and A. Turner, “Space layout affects search efficiency for agents with vision,” 2003. Available: https://www.spacesyntax.net/symposia-archive/SSS4/fullpapers/09Penn-Turner.pdf. [Accessed: Oct. 01, 2024]
 
-[4] J. Dahmen, B. Thomas, D. Cook, and X. Wang, “Activity Learning as a Foundation for Security Monitoring in Smart Homes,” Sensors, vol. 17, no. 4, p. 737, Mar. 	2017, doi: https://doi.org/10.3390/s17040737
+[4] K. G., “Layout design for efficiency improvement and cost reduction,” Bulletin of the Polish Academy of Sciences: Technical Sciences, 2019, doi: https://doi.org/10.24425/bpasts.2019.129653. Available: https://journals.pan.pl/dlibra/publication/129653/edition/113167/content
 
-[5] A. Sedlmeier and S. Feld, “Learning indoor space perception,” Journal of Location Based Services, vol. 12, no. 3–4, pp. 179–214, Oct. 2018, doi: https://doi.org/10.1080/17489725.2018.1539255
+[5] M. Ran and J. Dong, “A Multiobjective Optimization Algorithm for Building Interior Design and Spatial Structure Optimization,” Mobile Information Systems, 	vol. 2022, pp. 1–15, Jul. 2022, doi: https://doi.org/10.1155/2022/5659280
 
-[6] L. Chen, C. Nugent, and G. Okeyo, “An Ontology-Based Hybrid Approach to Activity Modeling for Smart Homes,” IEEE Transactions on Human-Machine Systems, vol. 44, no. 1, pp. 92–105, Feb. 2014, doi: https://doi.org/10.1109/thms.2013.2293714
+[6] L. Chen, C. Nugent, and G. Okeyo, “An Ontology-Based Hybrid Approach to Activity Modeling for Smart Homes,” IEEE Transactions on Human-Machine Systems, vol. 44, no. 1, pp. 92–105, Feb. 2014, doi: 	https://doi.org/10.1109/thms.2013.2293714
+
+
