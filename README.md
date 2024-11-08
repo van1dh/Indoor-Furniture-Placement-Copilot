@@ -13,7 +13,10 @@ Yongyi Xie xyy0208@bu.edu
 ### User Story 2: Accessible Bedroom for Mobility-Impaired Adults
 	A wheelchair user needs a bedroom layout that provides easy access to the bed, closet, and desk, with enough space to maneuver the wheelchair. The copilot assists in rearranging furniture to optimize accessibility while maintaining functionality.
 ### User Story 3: Shared Space Optimization for Tenants
-	A group of four students, two boys, and two girls, live in one studio, with boys needing space to play together, girls gossiping together, and everyone get privacies. They also need some space for group work. They want the furniture arranged in a way that accommodates everyone’s needs without making the space feel cramped or chaotic.
+	A group of four students, two boys, and two girls, live in one studio, with boys needing space to play together, girls gossiping together, and everyone getting privacies. They also need some space for group work. They want the furniture arranged to accommodate everyone’s needs without making the space feel cramped or chaotic.
+## Recent Progress
+ Data Generation completed in main.py. The sample output is in path.json, in the format of [start_time_since_00:00_in_seconds, x_position_in_feet, y_position_in_feet]. The original point starts from the bottom-left corner of the room, which is a rectangle.
+In main.py, furniture and people classes are defined. Details are included in the file.
 
 ## References
 [1] L. Yanhua, “Optimizing Space with AI: Intelligent Design Solutions for Soft Furnishings and Decor,” International Journal of Science and Engineering Applications, vol. 13, no. 7, Jun. 2024, doi: https://doi.org/10.7753/ijsea1307.1008
@@ -25,5 +28,7 @@ Yongyi Xie xyy0208@bu.edu
 [4] K. G., “Layout design for efficiency improvement and cost reduction,” Bulletin of the Polish Academy of Sciences: Technical Sciences, 2019, doi: https://doi.org/10.24425/bpasts.2019.129653. Available: https://journals.pan.pl/dlibra/publication/129653/edition/113167/content
 
 [5] M. Ran and J. Dong, “A Multiobjective Optimization Algorithm for Building Interior Design and Spatial Structure Optimization,” Mobile Information Systems, 	vol. 2022, pp. 1–15, Jul. 2022, doi: https://doi.org/10.1155/2022/5659280
+
+[6] L. Chen, C. Nugent, and G. Okeyo, “An Ontology-Based Hybrid Approach to Activity Modeling for Smart Homes,” IEEE Transactions on Human-Machine Systems, vol. 44, no. 1, pp. 92–105, Feb. 2014, doi: 	https://doi.org/10.1109/thms.2013.2293714tion,” Mobile Information Systems, 	vol. 2022, pp. 1–15, Jul. 2022, doi: https://doi.org/10.1155/2022/5659280
 
 [6] L. Chen, C. Nugent, and G. Okeyo, “An Ontology-Based Hybrid Approach to Activity Modeling for Smart Homes,” IEEE Transactions on Human-Machine Systems, vol. 44, no. 1, pp. 92–105, Feb. 2014, doi: 	https://doi.org/10.1109/thms.2013.2293714
