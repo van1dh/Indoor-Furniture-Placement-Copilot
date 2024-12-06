@@ -1,24 +1,25 @@
 import React from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import './ResultPage.css';
 
 const ResultPage = () => {
-  const location = useLocation();
-  const navigate = useNavigate();
-  const { imagePath } = location.state || {};
-
-  if (!imagePath) {
-    return <p>Not received. Try again.</p>;
-  }
-
-  console.log('Image path:', imagePath);
   return (
     <div className="result-container">
-      <button onClick={() => navigate(-1)}>Back</button>
-      <h1>Layout Design</h1>
-      <img src={imagePath} alt="Generated Layout" className="result-image" />
+      <button className="back-button" onClick={() => window.history.back()}>
+        Back
+      </button>
+      <div className="result-content">
+        <h2>Layout Design</h2>
+        <img
+          src="/room_layout.png"
+          alt="Layout Design"
+          className="result-image"
+        />
+      </div>
     </div>
   );
 };
 
 export default ResultPage;
+
+
 

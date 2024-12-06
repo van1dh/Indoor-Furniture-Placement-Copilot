@@ -19,7 +19,8 @@ const GenerationPage = () => {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    console.log('Submitting form data:', formData); // 调试：检查表单数据
+    console.log('Fetching URL:', 'http://localhost:5000/api/generate');// 调试前端提交数据
+  
     fetch('http://localhost:5000/api/generate', {
       method: 'POST',
       headers: {
@@ -28,20 +29,22 @@ const GenerationPage = () => {
       body: JSON.stringify(formData),
     })
       .then((response) => {
-        console.log('Response status:', response.status); // 调试：检查响应状态
+        console.log('Response status:', response.status); // 检查响应状态码
         if (!response.ok) {
           throw new Error('Failed to fetch data');
         }
         return response.json();
       })
       .then((data) => {
-        console.log('Data received:', data); // 调试：检查后端返回的数据
+        console.log('Data received:', data); // 检查后端返回的数据
         navigate('/result', { state: { imagePath: data.imagePath } });
       })
       .catch((error) => {
-        console.error('Error during fetch:', error); // 调试：捕获错误
+        console.error('Error during fetch:', error.message); // 捕获请求错误
       });
   };
+  
+  
   
 
   return (

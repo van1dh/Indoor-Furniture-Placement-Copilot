@@ -1,5 +1,5 @@
 import sys
-import json
+import os
 import matplotlib.pyplot as plt
 import random
 
@@ -76,7 +76,39 @@ def generate_room_layout(furniture_counts):
 
     return furniture_list
 
-def plot_room_layout(furniture_list, notes):
+def plot_room_layout(furniture_list, notes, output_path):
+    output_dir = os.path.dirname(output_path)
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
+    fig, ax = plt.subplots()
+    ax.set_xlim(0, ROOM_WIDTH)
+    ax.set_ylim(0, ROOM_HEIGHT)
+    ax.set_aspect('equal')
+    ax.set_title("Room Layout")
+    ax.set_xlabel("Width (feet)")
+    ax.set_ylabel("Height (feet)")
+
+    ax.plot([0, ROOM_WIDTH, ROOM_WIDTH, 0, 0], [0, 0, ROOM_HEIGHT, ROOM_HEIGHT, 0], color='black')
+
+    for furniture in furniture_list:
+        x, y = furniture.x, furniture.y
+        width, height = furniture.width, furniture.height
+        rect = plt.Rectangle((x - width / 2, y - height / 2), width, height, edgecolor='blue', facecolor='lightblue')
+        ax.add_patch(rect)
+        ax.text(x, y, furniture.name, ha='center', va='center', fontsize=8)
+
+    if notes:
+        ax.text(0.5, -0.1, f"Notes: {notes}", transform=ax.transAxes, ha='center', va='top', fontsize=10, color='gray')
+
+    try:
+        plt.savefig(output_path)
+        print(f"Image saved at: {output_path}")
+    except Exception as e:
+        print(f"Error saving image: {e}", file=sys.stderr)
+    finally:
+        plt.close()
+
     fig, ax = plt.subplots()
     ax.set_xlim(0, ROOM_WIDTH)
     ax.set_ylim(0, ROOM_HEIGHT)
@@ -106,7 +138,7 @@ def plot_room_layout(furniture_list, notes):
     if notes:
         ax.text(0.5, -0.1, f"Notes: {notes}", transform=ax.transAxes, ha='center', va='top', fontsize=10, color='gray')
 
-    plt.savefig('room_layout.png')
+    plt.savefig(output_path)
     plt.close()
 
 def main():
@@ -124,11 +156,9 @@ def main():
         "wardrobe": wardrobe
     }
 
+    output_path = os.path.join("..", "public", "room_layout.png")
     furniture_list = generate_room_layout(furniture_counts)
-    plot_room_layout(furniture_list, notes)
-
-    print("room_layout.png")
+    plot_room_layout(furniture_list, notes, output_path)
 
 if __name__ == "__main__":
     main()
-

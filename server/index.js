@@ -13,41 +13,43 @@ app.use(bodyParser.json());
 app.use('/images', express.static(path.join(__dirname, 'images')));
 
 app.post('/api/generate', (req, res) => {
-    const { bed, desk, tv, wardrobe, notes } = req.body;
-  
-    if (!bed || !desk || !tv || !wardrobe) {
-      return res.status(400).json({ error: 'Invalid input' });
-    }
-  
-    const pythonProcess = spawn('python', [
-      './placement_generation.py',
-      bed,
-      desk,
-      tv,
-      wardrobe,
-      notes
-    ]);
-  
-    let scriptOutput = '';
-  
-    pythonProcess.stdout.on('data', (data) => {
-      scriptOutput += data.toString();
-    });
-  
-    pythonProcess.stderr.on('data', (data) => {
-      console.error('Python script error:', data.toString());
-    });
-  
-    pythonProcess.on('close', (code) => {
-      console.log(`Python script exited with code ${code}`);
-      if (code !== 0) {
-        return res.status(500).json({ error: 'Python script failed' });
-      }
-  
-      const imagePath = scriptOutput.trim();
-      res.json({ imagePath });
-    });
+  const { bed, desk, tv, wardrobe, notes } = req.body;
+
+  const pythonProcess = spawn('python', [
+    'placement_generation.py',
+    bed,
+    desk,
+    tv,
+    wardrobe,
+    notes,
+  ]);
+
+  let scriptOutput = '';
+  let scriptError = '';
+
+  pythonProcess.stdout.on('data', (data) => {
+    const imagePath = data.toString().trim(); // 获取 Python 返回的路径
+    console.log('Image path from Python:', imagePath); // 调试打印路径
+    res.json({ imagePath }); // 返回路径给前端
+    scriptOutput += data.toString();
   });
+
+  pythonProcess.stderr.on('data', (data) => {
+    scriptError += data.toString();
+  });
+
+  pythonProcess.on('close', (code) => {
+    if (code !== 0 || scriptError) {
+      console.error('Python script error:', scriptError);
+      return res.status(500).json({ error: 'Python script execution failed' });
+    }   
+
+    const imagePath = scriptOutput.trim();
+    console.log('Image generated at:', imagePath);
+    res.json({ imagePath });
+  });
+});
+
   
 
 app.listen(PORT, () => {
