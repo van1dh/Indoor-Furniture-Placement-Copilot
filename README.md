@@ -21,12 +21,17 @@ In main.py, furniture and people classes are defined. Details are included in th
 11/7: Path and room Layout Visualizations. Given input furniture numbers, the program can output a basic design, ensuring they don't collide.
 Express.js creation. This involves creating the backend part. Using node.js, I implemented a call for OpenAI API and made a local server.
 
-## What To Do Next
-User Interface creation using React. To be finished by this week.
+11/25: Javascript + CSS implementation of front-end design. Established the structure of three pages, WelcomePage, Generation Page and Result Page.
+Use React package to implement. All codes in master branch.
 
-Putting everything together. Now the program contains different codes in different languages.
+12/5: Connect frontend (on localhost:3000) to backend (on localhost:5000/api/generate), and go through unit testing.
 
-Path analysis algorithms. This enables optimization of routes.
+## What To Do In Further Improvments
+Add ways to modify the furniture sizes and room size by user themselves.
+
+Adjust the generation style to look more vivid.
+
+Further improve user interface (UI) for better user experiences based on feedbacks.
 
 ## References
 [1] L. Yanhua, “Optimizing Space with AI: Intelligent Design Solutions for Soft Furnishings and Decor,” International Journal of Science and Engineering Applications, vol. 13, no. 7, Jun. 2024, doi: https://doi.org/10.7753/ijsea1307.1008
