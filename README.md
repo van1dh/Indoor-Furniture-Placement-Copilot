@@ -19,10 +19,11 @@ Yongyi Xie xyy0208@bu.edu
 In main.py, furniture and people classes are defined. Details are included in the file.
 
 11/7: Path and room Layout Visualizations. Given input furniture numbers, the program can output a basic design, ensuring they don't collide.
+
 Express.js creation. This involves creating the backend part. Using node.js, I implemented a call for OpenAI API and made a local server.
 
 11/25: Javascript + CSS implementation of front-end design. Established the structure of three pages, WelcomePage, Generation Page and Result Page.
-Use React package to implement. All codes in master branch.
+I use React package to implement the frame. All codes in master branch.
 
 12/5: Connect frontend (on localhost:3000) to backend (on localhost:5000/api/generate), and go through unit testing.
 
