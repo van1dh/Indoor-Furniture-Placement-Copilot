@@ -50,4 +50,4 @@ Further improve user interface (UI) for better user experiences based on feedbac
 
 [6] L. Chen, C. Nugent, and G. Okeyo, “An Ontology-Based Hybrid Approach to Activity Modeling for Smart Homes,” IEEE Transactions on Human-Machine Systems, vol. 44, no. 1, pp. 92–105, Feb. 2014, doi: 	https://doi.org/10.1109/thms.2013.2293714tion,” Mobile Information Systems, 	vol. 2022, pp. 1–15, Jul. 2022, doi: https://doi.org/10.1155/2022/5659280
 
-[6] L. Chen, C. Nugent, and G. Okeyo, “An Ontology-Based Hybrid Approach to Activity Modeling for Smart Homes,” IEEE Transactions on Human-Machine Systems, vol. 44, no. 1, pp. 92–105, Feb. 2014, doi: 	https://doi.org/10.1109/thms.2013.2293714
+[7] L. Chen, C. Nugent, and G. Okeyo, “An Ontology-Based Hybrid Approach to Activity Modeling for Smart Homes,” IEEE Transactions on Human-Machine Systems, vol. 44, no. 1, pp. 92–105, Feb. 2014, doi: 	https://doi.org/10.1109/thms.2013.2293714
