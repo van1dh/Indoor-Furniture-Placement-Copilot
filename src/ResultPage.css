@@ -1,0 +1,231 @@
+.result-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 100vh;
+  padding: 72px 16px 40px;
+  box-sizing: border-box;
+  background-image: url('./assets/images/background.png');
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+}
+
+.result-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  max-width: 720px;
+  box-sizing: border-box;
+  background-color: rgba(255, 255, 255, 0.94);
+  padding: 20px;
+  border-radius: 10px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+}
+
+.result-content h2 {
+  font-size: 2rem;
+  margin: 0;
+  color: #333;
+}
+
+.result-summary {
+  width: 100%;
+  font-size: 14px;
+  color: #333;
+}
+
+.result-summary p {
+  margin: 0 0 8px;
+}
+
+.result-warnings {
+  margin: 0 0 8px;
+  padding-left: 20px;
+  color: #b00020;
+}
+
+.result-ok {
+  color: #2e7d32;
+}
+
+.result-notes {
+  color: #666;
+  font-style: italic;
+}
+
+.result-section {
+  width: 100%;
+  font-size: 14px;
+  color: #333;
+}
+
+.result-section h3 {
+  font-size: 1rem;
+  margin: 0 0 6px;
+}
+
+.result-toggle {
+  align-self: flex-start;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 14px;
+}
+
+.copilot-explanation {
+  margin: 0 0 6px;
+  line-height: 1.5;
+}
+
+.copilot-offline,
+.copilot-notice {
+  margin: 0 0 4px;
+  font-size: 13px;
+  color: #8a5a00;
+}
+
+.preference-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.preference-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.preference-text {
+  flex: 1;
+}
+
+.preference-met span:first-child {
+  color: #2e7d32;
+}
+
+.preference-unmet span:first-child {
+  color: #b00020;
+}
+
+.chat-log {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.chat-log li {
+  padding: 6px 10px;
+  border-radius: 8px;
+  max-width: 85%;
+}
+
+.chat-user {
+  align-self: flex-end;
+  background: #e3f0ff;
+}
+
+.chat-assistant {
+  align-self: flex-start;
+  background: #f1f1f1;
+}
+
+.chat-form {
+  display: flex;
+  gap: 8px;
+}
+
+.chat-form input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px;
+  font-size: 14px;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+}
+
+.result-toolbar {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.result-toolbar-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+}
+
+.result-hint {
+  align-self: flex-start;
+  margin: -6px 0 0;
+  font-size: 12px;
+  color: #777;
+}
+
+.link-button {
+  padding: 0;
+  border: none;
+  background: none;
+  color: #1a5fb4;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.link-button:disabled {
+  color: #aaa;
+  cursor: default;
+}
+
+.compare-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.compare-card {
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 8px;
+}
+
+.compare-card h4 {
+  margin: 0 0 4px;
+  font-size: 14px;
+}
+
+.compare-card dl {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 2px 8px;
+  margin: 6px 0;
+  font-size: 12px;
+}
+
+.compare-card dt {
+  color: #666;
+}
+
+.compare-card dd {
+  margin: 0;
+  text-align: right;
+}
+
+.compare-actions {
+  display: flex;
+  justify-content: space-between;
+}
+
+.compare-view {
+  max-height: 160px;
+}
