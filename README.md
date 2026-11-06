@@ -13,7 +13,7 @@ Yongyi Xie xyy0208@bu.edu
 | Path | Contents |
 | --- | --- |
 | `src/` | React frontend (Welcome, Generation and Result pages) |
-| `server/` | Express API (`index.js`), the layout engine (`layout/`) and its command-line entry point (`placement_generation.py`) |
+| `server/` | Express API (`index.js`), the layout engine and copilot (`layout/`) and their command-line entry point (`placement_generation.py`) |
 | `server/tests/` | API tests (`node --test`) and generator tests (`pytest`) |
 | `simulation/` | Daily activity path simulation (`path_simulation.py`) and sample output |
 | `notebooks/` | Path and layout visualization notebook |
@@ -34,6 +34,10 @@ npm start
 ```
 
 The server runs the layout engine with `server/.venv`'s Python when it exists; otherwise set `PYTHON` to the interpreter to use.
+
+To turn on the Claude copilot, give the server Claude API credentials before `npm start`, e.g.
+`export ANTHROPIC_API_KEY=...` (or sign in with `ant auth login`). Without credentials the app still works; see
+[The copilot](#the-copilot).
 
 ### 2. Frontend (port 3000)
 
@@ -61,20 +65,52 @@ to accept a different frontend origin on the server, set `CLIENT_ORIGIN` (defaul
   },
   "furniture": [{"type": "bed", "count": 1, "width": 5, "depth": 6.5}, {"type": "desk", "count": 1}],
   "notes": "toddler at home",
+  "preferences": [{"kind": "near", "piece": "bed", "target": "window", "strength": "high"}],
   "seed": 42
 }
 ```
 
 - `wall` is `bottom`, `right`, `top` or `left`; `offset` runs from the wall's left (bottom/top) or bottom (left/right) end.
 - Furniture `width` runs along the front and `depth` front to back; both default to the type's usual size.
+- `preset` may also be `"auto"`: the copilot picks one from the notes.
+- `preferences` is optional. Leave it out to have the copilot derive preferences from `notes`; send a list (even
+  an empty one) to use exactly those. Each has `kind` (`near`, `away`, `against_wall`), `piece` (a furniture type),
+  `target` (`window`, `door`, `center`, `wall:bottom|right|top|left` or a furniture type) and `strength`
+  (`low`, `medium`, `high`).
 - `seed` is optional; the same request and seed always give the same layout.
 
 Responses:
 
 - `200` with the layout: `room`, `furniture` (centre `x`/`y`, `rotation` = direction the front faces, 0 = up, 90 = right, …),
-  `metrics` (largest open area, walkway width, unreachable or cramped pieces, cost breakdown), `warnings` and the `seed` used
+  `metrics` (largest open area, walkway width, unreachable or cramped pieces, cost breakdown), `warnings`,
+  `preferences` (each with `met`), `flow` (daily foot traffic), `copilot` (`online`, `reply`, `explanation`,
+  `notices`) and `request`: the request with the preset, preferences and seed resolved, to send back to regenerate
+  or refine without asking the copilot again
 - `400 {"error": "..."}` for invalid input or furniture that does not fit
 - `500 {"error": "..."}` if the engine fails
+
+`POST /api/refine` changes a layout as a chat message asks:
+`{"request": <layout.request>, "layout": {"furniture": [{"id", "x", "y", "rotation"}, ...]}, "message": "put the desk by the window", "history": [{"role": "user", "text": "..."}, {"role": "assistant", "text": "..."}]}`.
+The copilot updates the preset and preferences, and the engine starts from the current layout and pays for every
+piece it moves, so only what the message is about changes. It returns a layout like `/api/generate`.
+
+## The copilot
+
+`server/layout/copilot.py` uses Claude (`claude-opus-5-5`, low effort, with server-side refusal fallbacks) to:
+
+- read the notes, and later chat messages, into a preset and placement preferences, using structured output whose
+  schema only allows the engine's furniture types, targets and presets;
+- explain each finished layout in 3–5 sentences, in the language the user wrote in.
+
+If no credentials are configured, the API cannot be reached, or `COPILOT_OFFLINE=1` is set, the copilot falls back:
+it picks a preset from keywords in the notes (English and Chinese), explains the layout from a template, and the
+result page says the copilot is offline. Tests always run offline.
+
+## Daily foot traffic
+
+After a layout is chosen, `server/layout/flow.py` simulates a day for each occupant (one per bed):
+bed → wardrobe → door → desk → sofa → wardrobe → bed, each trip along the shortest walkway. The result page shows
+the walking distance per person and, on request, a heatmap of where people walk.
 
 ## How layouts are generated
 
@@ -129,7 +165,6 @@ I use React package to implement the frame. All codes in master branch.
 
 ## Roadmap
 
-- Turn the free-text notes into layout constraints with an LLM, and explain each suggested layout.
 - Drag furniture to adjust a layout, compare several layouts side by side, export to PNG or JSON.
 
 ## References

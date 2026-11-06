@@ -19,11 +19,26 @@ export function fetchOptions() {
   return request('/api/options');
 }
 
-export function generateLayout(body) {
-  return request('/api/generate', {
+function post(path, body) {
+  return request(path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+  });
+}
+
+export function generateLayout(body) {
+  return post('/api/generate', body);
+}
+
+// Ask the copilot to change a layout: `layout` is the current result, `history` the chat so far
+// as [{ role: 'user' | 'assistant', text }].
+export function refineLayout(layout, message, history) {
+  return post('/api/refine', {
+    request: layout.request,
+    layout: { furniture: layout.furniture.map(({ id, x, y, rotation }) => ({ id, x, y, rotation })) },
+    message,
+    history,
   });
 }
 

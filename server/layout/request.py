@@ -1,8 +1,9 @@
 """Validate a layout request and turn it into model objects."""
 import math
 
-from .catalog import FURNITURE_TYPES, LIMITS, PRESETS, DEFAULT_PRESET, WALLS
-from .model import Opening, Piece, Room
+from . import preferences as prefs
+from .catalog import AUTO_PRESET, FURNITURE_TYPES, LIMITS, PRESETS, DEFAULT_PRESET, WALLS
+from .model import ROTATIONS, Opening, Piece, Placement, Room
 
 
 class InputError(ValueError):
@@ -62,12 +63,15 @@ def _openings(items, kind, room_width, room_length, max_count):
 
 
 def parse_request(request):
-    """Return (room, pieces, preset_name, notes, seed) or raise InputError."""
+    """Return (room, pieces, preset_name, notes, seed, preferences) or raise InputError.
+
+    ``preset_name`` may be AUTO_PRESET (let the copilot choose). ``preferences`` is None when the request has none,
+    so the copilot should derive them from the notes, or a validated list (possibly empty)."""
     if not isinstance(request, dict):
         raise InputError("Request must be a JSON object")
 
     preset = request.get("preset") or DEFAULT_PRESET
-    if preset not in PRESETS:
+    if preset not in PRESETS and preset != AUTO_PRESET:
         raise InputError(f"Unknown preset '{preset}'")
 
     room_data = request.get("room")
@@ -122,4 +126,53 @@ def parse_request(request):
     if seed is not None and (isinstance(seed, bool) or not isinstance(seed, int)):
         raise InputError("seed must be an integer")
 
-    return room, pieces, preset, notes.strip(), seed
+    preferences = request.get("preferences")
+    if preferences is not None:
+        try:
+            preferences, _ = prefs.normalize(preferences, pieces)
+        except prefs.PreferenceError as e:
+            raise InputError(str(e))
+
+    return room, pieces, preset, notes.strip(), seed, preferences
+
+
+def _text(value, name, limit):
+    if not isinstance(value, str) or not value.strip():
+        raise InputError(f"{name} is required")
+    if len(value) > limit:
+        raise InputError(f"{name} must be at most {limit} characters")
+    return value.strip()
+
+
+def parse_refinement(payload):
+    """Validate a refine request: the layout to change, the user's message and the chat so far.
+
+    Returns (request, initial placements by piece id, message, history)."""
+    if not isinstance(payload, dict) or not isinstance(payload.get("request"), dict):
+        raise InputError("request is required")
+    message = _text(payload.get("message"), "message", LIMITS["notes_max"])
+
+    placements = {}
+    layout = payload.get("layout") or {}
+    for item in layout.get("furniture") or [] if isinstance(layout, dict) else []:
+        try:
+            x, y, rotation = float(item["x"]), float(item["y"]), int(item["rotation"])
+        except (KeyError, TypeError, ValueError):
+            raise InputError("layout furniture needs x, y and rotation")
+        if rotation not in ROTATIONS:
+            raise InputError("rotation must be 0, 90, 180 or 270")
+        placements[str(item.get("id"))] = Placement(x, y, rotation)
+
+    history = payload.get("history") or []
+    if not isinstance(history, list) or len(history) > 20:
+        raise InputError("history must be a list of at most 20 messages")
+    turns = []
+    for i, turn in enumerate(history):
+        role = "user" if i % 2 == 0 else "assistant"
+        if not isinstance(turn, dict) or turn.get("role") != role:
+            raise InputError("history must alternate user and assistant messages, starting with the user")
+        turns.append({"role": role, "text": _text(turn.get("text"), "history text", 2000)})
+    if len(turns) % 2:
+        raise InputError("history must end with an assistant message")
+
+    return payload["request"], placements, message, turns

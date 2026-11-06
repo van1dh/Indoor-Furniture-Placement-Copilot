@@ -1,5 +1,8 @@
 const { test, before, after } = require('node:test');
 const assert = require('node:assert');
+
+// Never call the Claude API from tests: the generator runs with the copilot offline.
+process.env.COPILOT_OFFLINE = '1';
 const app = require('../index');
 
 let server;
@@ -55,6 +58,37 @@ test('generates a layout', async () => {
   assert.strictEqual(layout.seed, 3);
   assert.strictEqual(layout.notes, 'api test');
   assert.ok(Array.isArray(layout.warnings));
+  assert.strictEqual(layout.copilot.online, false);
+  assert.ok(layout.copilot.explanation);
+  assert.ok(layout.flow.dailyDistance > 0);
+  assert.strictEqual(layout.request.seed, 3);
+});
+
+test('applies preferences and refines a layout', async () => {
+  const preferences = [{ kind: 'near', piece: 'bed', target: 'window', strength: 'high' }];
+  const res = await post({ ...request, preferences });
+  assert.strictEqual(res.status, 200);
+  const layout = await res.json();
+  assert.strictEqual(layout.preferences[0].met, true);
+
+  const refined = await fetch(`${baseUrl}/api/refine`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ request: layout.request, layout, message: 'move the desk', history: [] }),
+  });
+  assert.strictEqual(refined.status, 200);
+  const body = await refined.json();
+  assert.deepStrictEqual(body.furniture, layout.furniture); // offline: nothing to change
+  assert.ok(body.copilot.reply);
+});
+
+test('rejects an invalid refine request', async () => {
+  const res = await fetch(`${baseUrl}/api/refine`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ request, message: '' }),
+  });
+  assert.strictEqual(res.status, 400);
 });
 
 test('ignores fields outside the request schema', async () => {

@@ -18,13 +18,17 @@ def _rank(evaluation):
 
 
 class Optimizer:
-    def __init__(self, room, pieces, preset_name, rng, restarts=4, iterations=1200):
+    def __init__(self, room, pieces, preset_name, rng, restarts=4, iterations=1200, preferences=(), initial=None):
+        """With ``initial`` placements (one per piece, or None for a new piece) the search refines that layout:
+        it starts there, runs cooler, and pays to move pieces away from where they were."""
         self.room = room
         self.pieces = pieces
         self.rng = rng
         self.restarts = restarts
         self.iterations = iterations
-        self.scorer = Scorer(room, pieces, preset_name)
+        self.initial = initial
+        anchors = {p.id: pl for p, pl in zip(pieces, initial) if pl is not None} if initial else None
+        self.scorer = Scorer(room, pieces, preset_name, preferences, anchors)
         self.same_type = [[j for j, q in enumerate(pieces) if q.type == p.type and j != i] for i, p in enumerate(pieces)]
 
     # --- moves --------------------------------------------------------------------------------------------
@@ -93,11 +97,17 @@ class Optimizer:
 
     # --- search -------------------------------------------------------------------------------------------
 
-    def _anneal(self):
-        placements = [self._random_placement(p) for p in self.pieces]
+    def _anneal(self, warm):
+        if warm:
+            placements = [self._clamp(p, pl.x, pl.y, pl.rotation) if pl else self._random_placement(p)
+                          for p, pl in zip(self.pieces, self.initial)]
+            t_start = 3.0
+        else:
+            placements = [self._random_placement(p) for p in self.pieces]
+            t_start = 30.0
         current = self.scorer.evaluate(placements)
         best_placements, best = placements, current
-        t_start, t_end = 30.0, 0.05
+        t_end = 0.05
         for step in range(self.iterations):
             ratio = step / max(self.iterations - 1, 1)
             temperature = t_start * (t_end / t_start) ** ratio
@@ -112,8 +122,8 @@ class Optimizer:
 
     def run(self):
         best_placements, best = None, None
-        for _ in range(self.restarts):
-            placements, result = self._anneal()
+        for attempt in range(self.restarts):
+            placements, result = self._anneal(warm=self.initial is not None and attempt == 0)
             if best is None or _rank(result) < _rank(best):
                 best_placements, best = placements, result
         if best.hard_violation:

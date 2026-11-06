@@ -77,7 +77,25 @@ function Piece({ piece, flip, flagged }) {
   );
 }
 
-const LayoutView = ({ layout, showOpenSpace = true }) => {
+function Traffic({ flow, flip }) {
+  const size = flow.cellSize;
+  return (
+    <g className="layout-traffic">
+      {flow.cells.map(([x, y, count]) => (
+        <rect
+          key={`${x},${y}`}
+          x={x - size / 2}
+          y={flip(y) - size / 2}
+          width={size}
+          height={size}
+          opacity={0.15 + 0.6 * (count / flow.maxCount)}
+        />
+      ))}
+    </g>
+  );
+}
+
+const LayoutView = ({ layout, showOpenSpace = true, showTraffic = false }) => {
   const { room, furniture, metrics } = layout;
   const flip = (y) => room.length - y;
   const flagged = new Set([...(metrics.unreachable || []), ...(metrics.cramped || [])]);
@@ -96,6 +114,7 @@ const LayoutView = ({ layout, showOpenSpace = true }) => {
           <title>{`Largest open area: ${(open.radius * 2).toFixed(1)} ft across`}</title>
         </circle>
       )}
+      {showTraffic && layout.flow && <Traffic flow={layout.flow} flip={flip} />}
       <rect
         x={-WALL / 2}
         y={-WALL / 2}

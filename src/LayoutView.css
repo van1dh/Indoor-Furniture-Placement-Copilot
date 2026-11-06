@@ -79,3 +79,7 @@
   dominant-baseline: central;
   font-family: system-ui, sans-serif;
 }
+
+.layout-traffic rect {
+  fill: #f57c00;
+}

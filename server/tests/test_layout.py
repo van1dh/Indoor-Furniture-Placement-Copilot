@@ -70,7 +70,7 @@ def test_rejects_non_object():
 
 
 def test_parses_defaults_and_custom_sizes():
-    room, pieces, preset, notes, seed = parse_request(make_request(
+    room, pieces, preset, notes, seed, preferences = parse_request(make_request(
         furniture=[{"type": "bed", "count": 2, "width": 4.5, "depth": ""}, {"type": "desk", "count": "1"}],
         notes="  hello ",
     ))
@@ -78,6 +78,7 @@ def test_parses_defaults_and_custom_sizes():
     assert [p.label for p in pieces] == ["Bed 1", "Bed 2", "Desk"]
     assert pieces[0].width == 4.5 and pieces[0].depth == FURNITURE_TYPES["bed"]["depth"]
     assert preset == "default" and notes == "hello" and seed == 7
+    assert preferences is None
 
 
 # --- generated layouts ------------------------------------------------------------------------------------

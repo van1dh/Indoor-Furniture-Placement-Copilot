@@ -1,8 +1,9 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import App from './App';
 import GenerationPage from './GenerationPage';
 import LayoutView from './LayoutView';
+import ResultPage from './ResultPage';
 import { buildRequest, formFromOptions, validateForm } from './api';
 
 const options = {
@@ -14,7 +15,8 @@ const options = {
     default: { label: 'Balanced', description: 'Balanced layout.' },
     child_safe: { label: 'Child-safe', description: 'Play area.' },
   },
-  defaultPreset: 'default',
+  defaultPreset: 'auto',
+  autoPreset: { label: 'Let the copilot decide', description: 'Picks a goal from your notes.' },
   walls: ['bottom', 'right', 'top', 'left'],
   limits: {
     room_min: 8, room_max: 60, furniture_min: 1, furniture_max: 15, max_per_type: 6, max_total: 16,
@@ -40,6 +42,12 @@ const layout = {
   ],
   metrics: { openSpace: { x: 6, y: 6, radius: 4 }, walkwayWidth: 2.5, unreachable: ['desk-1'], cramped: [] },
   warnings: [],
+  preferences: [
+    { kind: 'near', piece: 'bed', target: 'window', strength: 'high', reason: 'light', met: true, text: 'Bed near the window' },
+  ],
+  flow: { cellSize: 0.5, cells: [[5, 5, 1], [5.5, 5, 2]], maxCount: 2, occupants: 1, dailyDistance: 42.5, missedTrips: 0 },
+  copilot: { online: true, reply: 'Set it up.', explanation: 'The bed is by the window for morning light.', notices: [] },
+  request: { preset: 'default', preferences: [{ kind: 'near', piece: 'bed', target: 'window', strength: 'high' }], seed: 1 },
 };
 
 test('renders the welcome page', () => {
@@ -53,7 +61,7 @@ describe('form helpers', () => {
     const form = formFromOptions(options);
     expect(validateForm(form, options)).toBeNull();
     expect(buildRequest(form)).toEqual({
-      preset: 'default',
+      preset: 'auto',
       room: { width: 16, length: 14, doors: [{ wall: 'bottom', offset: 1, width: 3 }], windows: [] },
       furniture: [
         { type: 'bed', count: 1, width: 5, depth: 6.5 },
@@ -93,9 +101,58 @@ test('GenerationPage builds its form from the server options', async () => {
       <GenerationPage />
     </MemoryRouter>,
   );
-  expect(await screen.findByRole('combobox', { name: /layout goal/i })).toHaveValue('default');
-  expect(screen.getByText('Balanced layout.')).toBeInTheDocument();
+  expect(await screen.findByRole('combobox', { name: /layout goal/i })).toHaveValue('auto');
+  expect(screen.getByText('Picks a goal from your notes.')).toBeInTheDocument();
   expect(screen.getByRole('spinbutton', { name: 'Bed count' })).toHaveValue(1);
   expect(screen.getByRole('spinbutton', { name: 'Desk width' })).toHaveValue(4);
   expect(global.fetch).toHaveBeenCalledWith(expect.stringMatching(/\/api\/options$/), undefined);
+});
+
+test('LayoutView draws the traffic heatmap only when asked', () => {
+  const { container, rerender } = render(<LayoutView layout={layout} />);
+  expect(container.querySelectorAll('.layout-traffic rect')).toHaveLength(0);
+  rerender(<LayoutView layout={layout} showTraffic />);
+  expect(container.querySelectorAll('.layout-traffic rect')).toHaveLength(2);
+});
+
+describe('ResultPage', () => {
+  const renderResult = () => render(
+    <MemoryRouter initialEntries={[{ pathname: '/result', state: { layout } }]}>
+      <ResultPage />
+    </MemoryRouter>,
+  );
+
+  test('shows the copilot explanation, preferences and walking distance', () => {
+    renderResult();
+    expect(screen.getByText('The bed is by the window for morning light.')).toBeInTheDocument();
+    expect(screen.getByText('Bed near the window')).toBeInTheDocument();
+    expect(screen.getByText('42.5 ft')).toBeInTheDocument();
+    expect(screen.queryByText(/copilot is offline/i)).not.toBeInTheDocument();
+  });
+
+  test('sends chat messages to the refine endpoint and shows the reply', async () => {
+    const refined = { ...layout, copilot: { ...layout.copilot, reply: 'Moved the desk.' } };
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve(refined) });
+    renderResult();
+    fireEvent.change(screen.getByRole('textbox', { name: /message to the copilot/i }), {
+      target: { value: 'Move the desk' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+
+    expect(await screen.findByText('Moved the desk.')).toBeInTheDocument();
+    expect(screen.getByText('Move the desk')).toBeInTheDocument();
+    const [url, init] = global.fetch.mock.calls[0];
+    expect(url).toMatch(/\/api\/refine$/);
+    const body = JSON.parse(init.body);
+    expect(body).toMatchObject({ message: 'Move the desk', history: [], request: layout.request });
+    expect(body.layout.furniture[0]).toEqual({ id: 'bed-1', x: 12.75, y: 9, rotation: 270 });
+  });
+
+  test('removing a preference regenerates without it', async () => {
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ ...layout, preferences: [] }) });
+    renderResult();
+    fireEvent.click(screen.getByRole('button', { name: /remove preference: bed near the window/i }));
+    await screen.findByRole('button', { name: /try another layout/i });
+    expect(JSON.parse(global.fetch.mock.calls[0][1].body).preferences).toEqual([]);
+  });
 });

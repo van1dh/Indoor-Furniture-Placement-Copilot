@@ -7,7 +7,7 @@ const cors = require('cors');
 const PORT = process.env.PORT || 5000;
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || 'http://localhost:3000';
 const SCRIPT_PATH = path.join(__dirname, 'placement_generation.py');
-const SCRIPT_TIMEOUT_MS = 60000;
+const SCRIPT_TIMEOUT_MS = 120000; // the copilot may call the Claude API twice
 
 // Prefer the server's virtualenv if it exists, then $PYTHON, then the platform default.
 function resolvePython() {
@@ -65,7 +65,7 @@ function getOptions() {
 
 const app = express();
 app.use(cors({ origin: CLIENT_ORIGIN }));
-app.use(express.json({ limit: '20kb' }));
+app.use(express.json({ limit: '100kb' }));
 
 app.get('/api/options', async (req, res) => {
   try {
@@ -76,10 +76,9 @@ app.get('/api/options', async (req, res) => {
   }
 });
 
-app.post('/api/generate', async (req, res) => {
-  const { preset, room, furniture, notes, seed } = req.body || {};
+async function runAndRespond(res, args, input) {
   try {
-    const { code, result } = await runPlacementScript([], { preset, room, furniture, notes, seed });
+    const { code, result } = await runPlacementScript(args, input);
     if (code === 0 && !result.error) {
       return res.json(result);
     }
@@ -90,6 +89,17 @@ app.post('/api/generate', async (req, res) => {
     console.error('Failed to run placement_generation.py:', err);
     return res.status(500).json({ error: 'Layout generation failed' });
   }
+}
+
+app.post('/api/generate', (req, res) => {
+  const { preset, room, furniture, notes, seed, preferences } = req.body || {};
+  return runAndRespond(res, [], { preset, room, furniture, notes, seed, preferences });
+});
+
+// Change an existing layout as a chat message asks ("move the bed under the window")
+app.post('/api/refine', (req, res) => {
+  const { request, layout, message, history } = req.body || {};
+  return runAndRespond(res, ['--refine'], { request, layout, message, history });
 });
 
 if (require.main === module) {

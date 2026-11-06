@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 import numpy as np
 from scipy import ndimage
 
+from . import preferences as prefs
 from .catalog import BASE_WEIGHTS, FURNITURE_TYPES, PRESETS
 from .model import (
     FACING,
@@ -39,6 +40,7 @@ class Evaluation:
     cramped: list = field(default_factory=list)  # piece ids without enough room in front
     open_radius: float = 0.0
     open_center: tuple = (0.0, 0.0)
+    preferences_met: list = field(default_factory=list)  # one bool per preference
 
     @property
     def hard_violation(self):
@@ -46,7 +48,8 @@ class Evaluation:
 
 
 class Scorer:
-    def __init__(self, room, pieces, preset_name):
+    def __init__(self, room, pieces, preset_name, preferences=(), anchors=None):
+        """``anchors`` maps piece ids to placements the layout should stay close to (for small edits)."""
         self.room = room
         self.pieces = pieces
         self.preset = PRESETS[preset_name]
@@ -56,6 +59,8 @@ class Scorer:
         self.front_depths = [max(s["front_clearance"], self.preset["min_front_clearance"]) for s in self.specs]
         self.door_zones = [room.opening_zone(d, d.width) for d in room.doors]
         self.window_zones = [room.opening_zone(w, WINDOW_ZONE_DEPTH) for w in room.windows]
+        self.preferences = list(preferences)
+        self.anchors = [anchors.get(p.id) for p in pieces] if anchors else None
         self._build_base_grid()
 
     # --- grid helpers -------------------------------------------------------------------------------------
@@ -136,11 +141,7 @@ class Scorer:
 
         # Walkways: free floor, eroded by the agent's radius, must connect each door to each piece's front
         res = GRID_RESOLUTION
-        free = self.base_free.copy()
-        for rect in rects:
-            self._fill(free, rect, False)
-        clearance = ndimage.distance_transform_edt(free) * res - res / 2
-        walkable = clearance >= self.radius - res / 2
+        free, clearance, walkable = self.walk_grid(rects)
         labels, _ = ndimage.label(walkable)
         door_labels = {self._feasible_label(labels, clearance, p) for p in self.door_points} - {0}
         unreachable = []
@@ -166,9 +167,24 @@ class Scorer:
 
         terms["viewing"] = self._viewing_cost(placements)
         terms["privacy"], terms["desk_group"] = self._sharing_costs(placements)
+        terms["preferences"], met = prefs.evaluate(self.preferences, room, pieces, placements)
+        if self.anchors:
+            for anchor, placement in zip(self.anchors, placements):
+                if anchor is not None:
+                    terms["anchor"] += math.hypot(placement.x - anchor.x, placement.y - anchor.y)
+                    terms["anchor"] += 0.0 if placement.rotation == anchor.rotation else 2.0
 
         total = sum(self.weights[name] * value for name, value in terms.items())
-        return Evaluation(total, terms, unreachable, cramped, open_radius, open_center)
+        return Evaluation(total, terms, unreachable, cramped, open_radius, open_center, met)
+
+    def walk_grid(self, rects):
+        """(free floor, clearance in feet, cells where the agent's centre fits) for furniture footprints."""
+        res = GRID_RESOLUTION
+        free = self.base_free.copy()
+        for rect in rects:
+            self._fill(free, rect, False)
+        clearance = ndimage.distance_transform_edt(free) * res - res / 2
+        return free, clearance, clearance >= self.radius - res / 2
 
     def _viewing_cost(self, placements):
         tvs = [i for i, p in enumerate(self.pieces) if p.type == "tv"]

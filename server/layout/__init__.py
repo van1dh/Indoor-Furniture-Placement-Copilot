@@ -1,15 +1,20 @@
 """Furniture layout engine: validate a request, search for a layout and describe the result."""
 import random
 
-from .catalog import FURNITURE_TYPES, PRESETS, describe
-from .model import FACING, footprint_size, front_point
+from . import flow
+from . import preferences as prefs
+from .catalog import AUTO_PRESET, DEFAULT_PRESET, FURNITURE_TYPES, PRESETS, describe
+from .copilot import Copilot
+from .model import FACING, back_wall_distance, footprint_size, front_point
 from .optimizer import Optimizer, PlacementError
-from .request import InputError, parse_request
+from .request import InputError, parse_refinement, parse_request
 
-__all__ = ["InputError", "PlacementError", "describe", "generate_layout"]
+__all__ = ["Copilot", "InputError", "PlacementError", "describe", "generate_layout", "refine_layout"]
+
+WALL_BY_ROTATION = {0: "bottom", 180: "top", 90: "left", 270: "right"}  # the wall behind a piece
 
 
-def _warnings(room, pieces, preset_name, evaluation, scorer):
+def _warnings(pieces, preset_name, evaluation, scorer):
     preset = PRESETS[preset_name]
     labels = {p.id: p.label for p in pieces}
     walkway_in = round(preset["agent_radius"] * 2 * 12)
@@ -29,17 +34,10 @@ def _warnings(room, pieces, preset_name, evaluation, scorer):
     return warnings
 
 
-def generate_layout(request):
-    """Return a JSON-ready layout for a request, or raise InputError / PlacementError."""
-    room, pieces, preset_name, notes, seed = parse_request(request)
-    if seed is None:
-        seed = random.randrange(2 ** 31)
-
-    optimizer = Optimizer(room, pieces, preset_name, random.Random(seed))
-    placements, evaluation = optimizer.run()
-    scorer = optimizer.scorer
-
+def _layout(request, room, pieces, preset_name, notes, seed, preferences, placements, evaluation, scorer,
+            copilot, reply, notices):
     furniture = []
+    summary_pieces = []
     for piece, placement in zip(pieces, placements):
         w, h = footprint_size(piece, placement.rotation)
         fx, fy = front_point(piece, placement, 0)
@@ -56,25 +54,117 @@ def generate_layout(request):
             "front": {"x": round(fx, 3), "y": round(fy, 3), "direction": list(FACING[placement.rotation])},
             "tall": FURNITURE_TYPES[piece.type]["tall"],
         })
+        against = back_wall_distance(piece, placement, room) < 0.1
+        summary_pieces.append({
+            "label": piece.label,
+            "center_ft": [round(placement.x, 1), round(placement.y, 1)],
+            "wall": WALL_BY_ROTATION[placement.rotation] if against else None,
+            "faces": {0: "up", 90: "right", 180: "down", 270: "left"}[placement.rotation],
+        })
 
+    traffic = flow.simulate(scorer, placements)
+    warnings = _warnings(pieces, preset_name, evaluation, scorer)
+    preference_status = [
+        {**p, "met": met, "text": prefs.describe(p)} for p, met in zip(preferences, evaluation.preferences_met)]
+    metrics = {
+        "openSpace": {
+            "x": round(evaluation.open_center[0], 3),
+            "y": round(evaluation.open_center[1], 3),
+            "radius": round(evaluation.open_radius, 3),
+        },
+        "walkwayWidth": PRESETS[preset_name]["agent_radius"] * 2,
+        "unreachable": evaluation.unreachable,
+        "cramped": evaluation.cramped,
+        "score": round(evaluation.total, 2),
+        "terms": {k: round(v, 3) for k, v in evaluation.terms.items() if scorer.weights[k] and v},
+    }
+
+    summary = {
+        "room": f"{room.width:g} x {room.length:g} ft room",
+        "preset": PRESETS[preset_name]["label"],
+        "notes": notes,
+        "doors": [f"{d.width:g} ft on the {d.wall} wall" for d in room.doors],
+        "windows": [f"{w.width:g} ft on the {w.wall} wall" for w in room.windows],
+        "furniture": summary_pieces,
+        "preferences": [{"text": p["text"], "met": p["met"]} for p in preference_status],
+        "metrics": {
+            "openAreaFeet": round(evaluation.open_radius * 2, 1),
+            "walkwayInches": round(metrics["walkwayWidth"] * 12),
+            "dailyWalkFeet": traffic["dailyDistance"],
+        },
+        "warnings": warnings,
+    }
+
+    # What to send back to regenerate or refine this layout without asking the copilot again
+    resolved = {k: v for k, v in request.items() if k not in ("preset", "preferences", "seed")}
+    resolved.update({"preset": preset_name, "preferences": [dict(p) for p in preferences], "seed": seed})
     return {
         "room": room.to_dict(),
         "furniture": furniture,
         "preset": preset_name,
         "notes": notes,
         "seed": seed,
-        "metrics": {
-            "openSpace": {
-                "x": round(evaluation.open_center[0], 3),
-                "y": round(evaluation.open_center[1], 3),
-                "radius": round(evaluation.open_radius, 3),
-            },
-            "walkwayWidth": PRESETS[preset_name]["agent_radius"] * 2,
-            "unreachable": evaluation.unreachable,
-            "cramped": evaluation.cramped,
-            "score": round(evaluation.total, 2),
-            "terms": {k: round(v, 3) for k, v in evaluation.terms.items() if scorer.weights[k]},
+        "metrics": metrics,
+        "warnings": warnings,
+        "preferences": preference_status,
+        "flow": traffic,
+        "copilot": {
+            "explanation": copilot.explain(summary),
+            "online": copilot.online,
+            "offlineReason": copilot.offline_reason,
+            "reply": reply,
+            "notices": notices,
         },
-        "warnings": _warnings(room, pieces, preset_name, evaluation, scorer),
+        "request": resolved,
     }
 
+
+def generate_layout(request, copilot=None):
+    """Return a JSON-ready layout for a request, or raise InputError / PlacementError."""
+    copilot = copilot or Copilot()
+    room, pieces, preset_name, notes, seed, preferences = parse_request(request)
+    if seed is None:
+        seed = random.randrange(2 ** 31)
+
+    reply, notices = None, []
+    if preferences is None:
+        preferences = []
+        if notes:
+            current = DEFAULT_PRESET if preset_name == AUTO_PRESET else preset_name
+            interpretation = copilot.interpret(notes, room, pieces, current, [])
+            preferences, reply, notices = interpretation.preferences, interpretation.reply, interpretation.notices
+            if preset_name == AUTO_PRESET:
+                preset_name = interpretation.preset or DEFAULT_PRESET
+    if preset_name == AUTO_PRESET:
+        preset_name = DEFAULT_PRESET
+
+    optimizer = Optimizer(room, pieces, preset_name, random.Random(seed), preferences=preferences)
+    placements, evaluation = optimizer.run()
+    return _layout(request, room, pieces, preset_name, notes, seed, preferences, placements, evaluation,
+                   optimizer.scorer, copilot, reply, notices)
+
+
+def refine_layout(payload, copilot=None):
+    """Change an existing layout according to a chat message, moving as little else as possible."""
+    copilot = copilot or Copilot()
+    request, initial_by_id, message, history = parse_refinement(payload)
+    room, pieces, preset_name, notes, seed, preferences = parse_request(request)
+    if preset_name == AUTO_PRESET:
+        preset_name = DEFAULT_PRESET
+    if seed is None:
+        seed = random.randrange(2 ** 31)
+    initial = [initial_by_id.get(p.id) for p in pieces]
+    layout = [
+        {"piece": p.label, "center_ft": [round(pl.x, 1), round(pl.y, 1)], "rotation": pl.rotation}
+        for p, pl in zip(pieces, initial) if pl is not None
+    ]
+
+    interpretation = copilot.interpret(message, room, pieces, preset_name, preferences or [], history, layout)
+    preset_name = interpretation.preset or preset_name
+    preferences = interpretation.preferences
+
+    optimizer = Optimizer(room, pieces, preset_name, random.Random(seed), restarts=2, iterations=900,
+                          preferences=preferences, initial=initial if any(initial) else None)
+    placements, evaluation = optimizer.run()
+    return _layout(request, room, pieces, preset_name, notes, seed, preferences, placements, evaluation,
+                   optimizer.scorer, copilot, interpretation.reply, interpretation.notices)

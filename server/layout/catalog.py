@@ -84,6 +84,7 @@ PRESETS = {
 }
 
 DEFAULT_PRESET = "default"
+AUTO_PRESET = "auto"  # let the copilot pick a preset from the notes
 
 # Weights shared by every preset; a preset's own weights override these.
 BASE_WEIGHTS = {
@@ -100,6 +101,8 @@ BASE_WEIGHTS = {
     "play_area": 0,
     "privacy": 0,
     "desk_group": 0,
+    "preferences": 1,  # preferences carry their own strength weights
+    "anchor": 1.5,  # staying close to the previous layout when refining it
 }
 
 LIMITS = {
@@ -130,7 +133,8 @@ def describe():
             name: {"label": preset["label"], "description": preset["description"]}
             for name, preset in PRESETS.items()
         },
-        "defaultPreset": DEFAULT_PRESET,
+        "defaultPreset": AUTO_PRESET,
+        "autoPreset": {"label": "Let the copilot decide", "description": "The copilot picks a goal from your notes."},
         "walls": list(WALLS),
         "limits": LIMITS,
         "defaults": {

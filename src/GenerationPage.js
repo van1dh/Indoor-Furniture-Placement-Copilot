@@ -104,11 +104,12 @@ const GenerationPage = () => {
           <fieldset className="form-section">
             <legend>Who is the room for?</legend>
             <select value={form.preset} onChange={(e) => setField('preset', e.target.value)} aria-label="Layout goal">
+              <option value="auto">{options.autoPreset.label}</option>
               {Object.entries(options.presets).map(([name, p]) => (
                 <option key={name} value={name}>{p.label}</option>
               ))}
             </select>
-            <p className="form-hint">{options.presets[form.preset].description}</p>
+            <p className="form-hint">{(options.presets[form.preset] || options.autoPreset).description}</p>
           </fieldset>
 
           <fieldset className="form-section">
@@ -157,10 +158,11 @@ const GenerationPage = () => {
           </fieldset>
 
           <label>
-            Note:
+            Notes for the copilot
             <textarea
               name="notes"
               maxLength={options.limits.notes_max}
+              placeholder="e.g. Our toddler plays here a lot. I'd like the bed by the window and the desk away from the door."
               value={form.notes}
               onChange={(e) => setField('notes', e.target.value)}
             />
