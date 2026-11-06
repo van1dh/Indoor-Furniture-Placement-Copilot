@@ -32,9 +32,9 @@ python -m venv .venv
 .venv/Scripts/python -m uvicorn app:app --port 5000 --reload
 ```
 
-To turn on the Claude copilot, give the server Claude API credentials before starting it, e.g.
-`export ANTHROPIC_API_KEY=...` (or sign in with `ant auth login`). Without credentials the app still works; see
-[The copilot](#the-copilot).
+To turn on the copilot, give the server Claude API credentials before starting it, e.g.
+`export ANTHROPIC_API_KEY=...` (or sign in with `ant auth login`), or point it at another model; see
+[The copilot](#the-copilot). Without a model the app still works.
 
 ### 2. Frontend (port 3000)
 
@@ -54,7 +54,7 @@ docker run -p 8000:8000 -e ANTHROPIC_API_KEY furniture-copilot
 ```
 
 The image serves the built frontend and the API together on http://localhost:8000. Leave out `-e ANTHROPIC_API_KEY`
-to run with the copilot offline.
+to run with the copilot offline, or pass the `COPILOT_*` variables below to use another model.
 
 ### API
 
@@ -90,8 +90,8 @@ Responses:
 
 - `200` with the layout: `room`, `furniture` (centre `x`/`y`, `rotation` = direction the front faces, 0 = up, 90 = right, …),
   `metrics` (largest open area, walkway width, unreachable or cramped pieces, cost breakdown), `warnings`,
-  `preferences` (each with `met`), `flow` (daily foot traffic), `copilot` (`online`, `reply`, `explanation`,
-  `notices`) and `request`: the request with the preset, preferences and seed resolved, to send back to regenerate
+  `preferences` (each with `met`), `flow` (daily foot traffic), `copilot` (`online`, `offlineReason`, `provider`,
+  `model`, `reply`, `explanation`, `notices`) and `request`: the request with the preset, preferences and seed resolved, to send back to regenerate
   or refine without asking the copilot again
 - `400 {"error": "..."}` for invalid input or furniture that does not fit
 - `500 {"error": "..."}` if the engine fails
@@ -104,7 +104,7 @@ piece it moves, so only what the message is about changes. It returns a layout l
 `POST /api/evaluate` scores a layout arranged by hand without moving anything:
 `{"request": <layout.request>, "layout": {"furniture": [{"id", "x", "y", "rotation"}, ...]}}` with every piece placed.
 It returns a layout like `/api/generate`; `metrics.valid` is false and `warnings` say why when pieces overlap, stick
-out of the room or block a door. The explanation comes from the template, so dragging never waits for Claude.
+out of the room or block a door. The explanation comes from the template, so dragging never waits for the model.
 
 ## Editing, comparing and exporting
 
@@ -116,13 +116,36 @@ and **Download JSON** saves the whole layout.
 
 ## The copilot
 
-`server/layout/copilot.py` uses Claude (`claude-opus-5-5`, low effort, with server-side refusal fallbacks) to:
+`server/layout/copilot.py` uses a language model to:
 
 - read the notes, and later chat messages, into a preset and placement preferences, using structured output whose
   schema only allows the engine's furniture types, targets and presets;
 - explain each finished layout in 3–5 sentences, in the language the user wrote in.
 
-If no credentials are configured, the API cannot be reached, or `COPILOT_OFFLINE=1` is set, the copilot falls back:
+By default that is Claude (`claude-opus-5-5`, low effort, with server-side refusal fallbacks). Environment variables
+on the server choose another model:
+
+| Variable | Meaning |
+| --- | --- |
+| `COPILOT_PROVIDER` | `anthropic` (default) or `openai` for any OpenAI-compatible API |
+| `COPILOT_MODEL` | Model id. Defaults to `claude-opus-5-5`; required with `openai` |
+| `COPILOT_BASE_URL` | API base URL for `openai`, e.g. `http://localhost:11434/v1` for Ollama |
+| `COPILOT_API_KEY` | API key for `openai` (falls back to `OPENAI_API_KEY`; optional with a base URL) |
+
+For example:
+
+```bash
+export COPILOT_MODEL=claude-sonnet-5-5                       # another Claude model
+export COPILOT_PROVIDER=openai COPILOT_MODEL=gpt-5 OPENAI_API_KEY=...   # OpenAI
+export COPILOT_PROVIDER=openai COPILOT_MODEL=qwen3 COPILOT_BASE_URL=http://localhost:11434/v1   # local Ollama
+```
+
+Other Claude models only get the request options they support (refusal fallbacks on Fable 5.1, Opus 5.5, Opus 5 and
+Sonnet 5.5; effort from the 4.6 generation on). OpenAI-compatible servers are asked for JSON-schema output first and
+for plain JSON mode, with the schema in the prompt, if they reject that; answers are validated either way, so a
+weaker model can only drop preferences, not break the layout. The result page shows which model answered.
+
+If no model is configured, the API cannot be reached, or `COPILOT_OFFLINE=1` is set, the copilot falls back:
 it picks a preset from keywords in the notes (English and Chinese), explains the layout from a template, and the
 result page says the copilot is offline. Tests always run offline.
 

@@ -48,7 +48,10 @@ const layout = {
     { kind: 'near', piece: 'bed', target: 'window', strength: 'high', reason: 'light', met: true, text: 'Bed near the window' },
   ],
   flow: { cellSize: 0.5, cells: [[5, 5, 1], [5.5, 5, 2]], maxCount: 2, occupants: 1, dailyDistance: 42.5, missedTrips: 0 },
-  copilot: { online: true, reply: 'Set it up.', explanation: 'The bed is by the window for morning light.', notices: [] },
+  copilot: {
+    online: true, provider: 'openai', model: 'qwen3', reply: 'Set it up.',
+    explanation: 'The bed is by the window for morning light.', notices: [],
+  },
   request: { preset: 'default', preferences: [{ kind: 'near', piece: 'bed', target: 'window', strength: 'high' }], seed: 1 },
 };
 
@@ -130,6 +133,7 @@ describe('ResultPage', () => {
     expect(screen.getByText('Bed near the window')).toBeInTheDocument();
     expect(screen.getByText('42.5 ft')).toBeInTheDocument();
     expect(screen.queryByText(/copilot is offline/i)).not.toBeInTheDocument();
+    expect(screen.getByText('Copilot: qwen3')).toBeInTheDocument();
   });
 
   test('sends chat messages to the refine endpoint and shows the reply', async () => {
