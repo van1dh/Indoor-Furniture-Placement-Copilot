@@ -6,6 +6,8 @@ import sys
 from types import SimpleNamespace
 
 import anthropic
+import httpx
+import openai
 import pytest
 
 SERVER_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -13,7 +15,8 @@ sys.path.insert(0, SERVER_DIR)
 
 from layout import Copilot, InputError, generate_layout, refine_layout  # noqa: E402
 from layout import flow, preferences as prefs  # noqa: E402
-from layout.copilot import MODEL, keyword_preset  # noqa: E402
+from layout.copilot import (  # noqa: E402
+    MODEL, AnthropicProvider, OpenAIProvider, keyword_preset, provider_from_env)
 from layout.model import Opening, Piece, Placement, Room  # noqa: E402
 from layout.optimizer import Optimizer  # noqa: E402
 from layout.scoring import Scorer  # noqa: E402
@@ -55,6 +58,34 @@ class FakeMessages:
 def fake_copilot(*answers):
     messages = FakeMessages(answers)
     return Copilot(client=SimpleNamespace(beta=SimpleNamespace(messages=messages))), messages
+
+
+class FakeCompletions:
+    """Stands in for an OpenAI client's chat.completions, like FakeMessages."""
+
+    def __init__(self, answers):
+        self.answers = list(answers)
+        self.calls = []
+
+    def create(self, **kwargs):
+        self.calls.append(kwargs)
+        answer = self.answers.pop(0)
+        if isinstance(answer, Exception):
+            raise answer
+        refusal = "I can't help with that." if answer == "REFUSAL" else None
+        text = None if refusal else answer if isinstance(answer, str) else json.dumps(answer)
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=text, refusal=refusal))])
+
+
+def fake_openai_copilot(*answers, model="gpt-test"):
+    completions = FakeCompletions(answers)
+    client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+    return Copilot(provider=OpenAIProvider(model, client=client)), completions
+
+
+def openai_error(cls, status):
+    response = httpx.Response(status, request=httpx.Request("POST", "http://test/v1/chat/completions"))
+    return cls("error", response=response, body=None)
 
 
 def pref(kind, piece, target, strength="high"):
@@ -154,6 +185,8 @@ def test_generate_uses_claude_for_notes_and_explanation():
     assert layout["copilot"] == {
         "online": True,
         "offlineReason": None,
+        "provider": "anthropic",
+        "model": MODEL,
         "reply": "Child-safe, with the bed by the window.",
         "explanation": "The bed sits under the window and the play area is in the middle.",
         "notices": ["There is no sofa in this room, so “Sofa near the door” was skipped."],
@@ -281,3 +314,102 @@ def test_cli_reads_non_ascii_notes_as_utf8():
     layout = json.loads(proc.stdout)
     assert layout["preset"] == "child_safe"
     assert layout["notes"] == "家里有个宝宝"
+
+
+def test_other_claude_models_get_only_the_parameters_they_support():
+    answer = {"preset": None, "preferences": [], "reply": "ok"}
+    for model, fallbacks, effort in [
+        ("claude-sonnet-5-5", True, True),
+        ("claude-haiku-5-5", False, True),
+        ("claude-haiku-4-5", False, False),
+    ]:
+        messages = FakeMessages([answer, "Explained."])
+        client = SimpleNamespace(beta=SimpleNamespace(messages=messages))
+        copilot = Copilot(provider=AnthropicProvider(model, client))
+        layout = generate_layout(make_request(notes="bed by the window"), copilot)
+        assert layout["copilot"]["model"] == model
+        for call in messages.calls:
+            assert call["model"] == model
+            assert ("fallbacks" in call) is fallbacks, model
+            assert ("effort" in call.get("output_config", {})) is effort, model
+        assert messages.calls[0]["output_config"]["format"]["type"] == "json_schema"
+
+
+def test_openai_compatible_provider():
+    copilot, completions = fake_openai_copilot(
+        {"preset": "child_safe", "preferences": [pref("near", "bed", "window")], "reply": "Done."},
+        "The bed is under the window.",
+    )
+    layout = generate_layout(make_request(preset="auto", notes="baby; bed by the window"), copilot)
+    assert layout["preset"] == "child_safe"
+    assert layout["preferences"][0]["met"]
+    assert layout["copilot"]["explanation"] == "The bed is under the window."
+    assert (layout["copilot"]["provider"], layout["copilot"]["model"]) == ("openai", "gpt-test")
+
+    interpret, explain = completions.calls
+    assert interpret["model"] == "gpt-test"
+    assert interpret["messages"][0]["role"] == "system"
+    assert interpret["response_format"]["type"] == "json_schema"
+    assert interpret["response_format"]["json_schema"]["strict"] is True
+    assert "response_format" not in explain
+
+
+def test_openai_compatible_server_without_json_schema_gets_json_mode():
+    copilot, completions = fake_openai_copilot(
+        openai_error(openai.BadRequestError, 400),
+        {"preset": None, "preferences": [pref("near", "desk", "window")], "reply": "Desk by the window."},
+        "Explained.",
+    )
+    layout = generate_layout(make_request(notes="desk by the window"), copilot)
+    assert layout["copilot"]["online"] is True
+    assert [p["text"] for p in layout["preferences"]] == ["Desk near the window"]
+    retry = completions.calls[1]
+    assert retry["response_format"] == {"type": "json_object"}
+    assert "JSON schema" in retry["messages"][0]["content"]
+
+
+def test_openai_compatible_refusal_and_errors():
+    copilot, _ = fake_openai_copilot("REFUSAL", "Explained.")
+    layout = generate_layout(make_request(preset="auto", notes="wheelchair"), copilot)
+    assert layout["preset"] == "accessible"
+    assert "declined" in layout["copilot"]["notices"][0]
+
+    copilot, completions = fake_openai_copilot(openai_error(openai.AuthenticationError, 401))
+    layout = generate_layout(make_request(notes="anything"), copilot)
+    assert layout["copilot"]["online"] is False
+    assert layout["copilot"]["offlineReason"] == "the model API credentials are missing or invalid"
+    assert len(completions.calls) == 1
+
+    copilot, _ = fake_openai_copilot("not json", "Explained.")
+    layout = generate_layout(make_request(notes="anything"), copilot)
+    assert "not valid JSON" in layout["copilot"]["notices"][0]
+
+
+@pytest.mark.parametrize("env, provider, model, reason", [
+    ({}, "anthropic", MODEL, None),
+    ({"COPILOT_MODEL": "claude-sonnet-5-5"}, "anthropic", "claude-sonnet-5-5", None),
+    ({"COPILOT_PROVIDER": "openai", "COPILOT_MODEL": "qwen3", "COPILOT_BASE_URL": "http://localhost:11434/v1"},
+     "openai", "qwen3", None),
+    ({"COPILOT_PROVIDER": "openai"}, None, None, "COPILOT_MODEL is not set"),
+    ({"COPILOT_PROVIDER": "gemini"}, None, None, "COPILOT_PROVIDER 'gemini' is not supported (use anthropic or openai)"),
+])
+def test_provider_from_env(monkeypatch, env, provider, model, reason):
+    for name in ("COPILOT_PROVIDER", "COPILOT_MODEL", "COPILOT_BASE_URL", "COPILOT_API_KEY", "OPENAI_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    found, why = provider_from_env()
+    assert why == reason
+    assert (found and found.name, found and found.model) == (provider, model)
+
+    monkeypatch.delenv("COPILOT_OFFLINE")
+    copilot = Copilot()
+    assert copilot.offline_reason == reason
+
+
+def test_openai_compatible_needs_a_key_or_a_base_url():
+    copilot = Copilot(provider=OpenAIProvider("gpt-test"))
+    layout = generate_layout(make_request(notes="anything"), copilot)
+    assert layout["copilot"]["offlineReason"] == "no API key is configured (set COPILOT_API_KEY or OPENAI_API_KEY)"
+    # A local server needs no key; the client is built without one
+    assert OpenAIProvider("qwen3", base_url="http://localhost:11434/v1")._client_or_offline().api_key == "not-needed"

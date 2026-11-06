@@ -287,9 +287,11 @@ const ResultPage = () => {
 
         <div className="result-section">
           <p className="copilot-explanation">{copilot.explanation}</p>
-          {!copilot.online && (
+          {copilot.online ? (
+            copilot.model && <p className="copilot-model">Copilot: {copilot.model}</p>
+          ) : (
             <p className="copilot-offline">
-              The Claude copilot is offline ({copilot.offlineReason}), so this summary comes from a template and
+              The copilot is offline ({copilot.offlineReason}), so this summary comes from a template and
               notes and messages are only read for keywords.
             </p>
           )}

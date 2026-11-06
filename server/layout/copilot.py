@@ -1,8 +1,16 @@
-"""Claude as the layout copilot: turn free-text notes and chat messages into presets and preferences, and explain
-finished layouts in plain language.
+"""The layout copilot: a language model turns free-text notes and chat messages into presets and preferences, and
+explains finished layouts in plain language.
 
-Without Claude API credentials (or with COPILOT_OFFLINE set) the copilot still works, more simply: it picks a
-preset from keywords in the notes and explains layouts from a template.
+Claude is the default. Environment variables choose another model or provider:
+    COPILOT_PROVIDER   "anthropic" (default), or "openai" for any OpenAI-compatible API (OpenAI, Gemini, DeepSeek,
+                       Qwen, a local Ollama or vLLM server, ...)
+    COPILOT_MODEL      the model id; defaults to claude-opus-5-5 for anthropic, required for openai
+    COPILOT_BASE_URL   the API's base URL, e.g. http://localhost:11434/v1 for Ollama (openai only; Claude reads
+                       ANTHROPIC_BASE_URL)
+    COPILOT_API_KEY    the API key (openai only; falls back to OPENAI_API_KEY, and is optional with a base URL)
+
+Without a usable model (or with COPILOT_OFFLINE set) the copilot still works, more simply: it picks a preset from
+keywords in the notes and explains layouts from a template.
 """
 import json
 import os
@@ -12,8 +20,11 @@ from dataclasses import dataclass, field
 from . import preferences as prefs
 from .catalog import FURNITURE_TYPES, PRESETS
 
-MODEL = "claude-opus-5-5"
+MODEL = "claude-opus-5-5"  # the default Claude model
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
+# Claude models that accept server-side refusal fallbacks (fallbacks="default"), and ones without effort control
+FALLBACK_MODELS = {"claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"}
+NO_EFFORT_MODELS = ("claude-sonnet-4-5", "claude-haiku-4-5", "claude-3")
 
 INTERPRET_SYSTEM = f"""You are the copilot of a furniture layout planner. A layout engine places furniture in a \
 rectangular room; you translate what the user wants into settings the engine understands.
@@ -79,7 +90,143 @@ PRESET_KEYWORDS = {
 
 
 class CopilotUnavailable(RuntimeError):
-    pass
+    """The model could not help with this request (a refusal, an empty or malformed answer)."""
+
+
+class CopilotOffline(CopilotUnavailable):
+    """The model cannot be used at all (no credentials, unreachable, ...); stop asking it for this request."""
+
+
+class AnthropicProvider:
+    """Claude through the Anthropic SDK, with structured outputs, effort and refusal fallbacks where supported."""
+
+    name = "anthropic"
+
+    def __init__(self, model=MODEL, client=None):
+        self.model = model
+        self._client = client
+
+    def _client_or_offline(self):
+        import anthropic
+
+        if self._client is None:
+            client = anthropic.Anthropic(timeout=60.0, max_retries=1)
+            # The SDK only notices missing credentials when it builds the request (and raises TypeError then)
+            if client.api_key is None and client.auth_token is None and client.credentials is None:
+                raise CopilotOffline("no Claude API credentials are configured")
+            self._client = client
+        return self._client
+
+    def complete(self, system, messages, max_tokens, schema=None):
+        import anthropic
+
+        client = self._client_or_offline()
+        params = {"model": self.model, "max_tokens": max_tokens, "system": system, "messages": messages}
+        output_config = {}
+        if not self.model.startswith(NO_EFFORT_MODELS):
+            output_config["effort"] = "low"
+        if schema:
+            output_config["format"] = {"type": "json_schema", "schema": schema}
+        if output_config:
+            params["output_config"] = output_config
+        if self.model in FALLBACK_MODELS:
+            params.update(betas=[FALLBACK_BETA], fallbacks="default")
+        try:
+            response = client.beta.messages.create(**params)
+        except (anthropic.AuthenticationError, anthropic.PermissionDeniedError):
+            raise CopilotOffline("the Claude API credentials are missing or invalid")
+        except anthropic.RateLimitError:
+            raise CopilotOffline("the Claude API is rate limiting requests")
+        except anthropic.APIConnectionError:
+            raise CopilotOffline("the Claude API could not be reached")
+        except anthropic.APIStatusError as e:
+            raise CopilotOffline(f"the Claude API returned an error ({e.status_code})")
+        except anthropic.AnthropicError:
+            raise CopilotOffline("no Claude API credentials are configured")
+        if response.stop_reason == "refusal":
+            raise CopilotUnavailable("Claude declined this request")
+        return "".join(b.text for b in response.content if b.type == "text")
+
+
+class OpenAIProvider:
+    """Any OpenAI-compatible chat completions API. Asks for JSON-schema output, and falls back to plain JSON mode
+    with the schema in the prompt for servers that do not support schemas."""
+
+    name = "openai"
+
+    def __init__(self, model, base_url=None, api_key=None, client=None):
+        self.model = model
+        self.base_url = base_url
+        self.api_key = api_key
+        self._client = client
+
+    def _client_or_offline(self):
+        if self._client is None:
+            try:
+                import openai
+            except ImportError:
+                raise CopilotOffline("the openai package is not installed")
+            if not self.api_key and not self.base_url:
+                raise CopilotOffline("no API key is configured (set COPILOT_API_KEY or OPENAI_API_KEY)")
+            # Local servers such as Ollama need no key, but the SDK insists on one
+            self._client = openai.OpenAI(
+                api_key=self.api_key or "not-needed", base_url=self.base_url, timeout=60.0, max_retries=1)
+        return self._client
+
+    def complete(self, system, messages, max_tokens, schema=None):
+        import openai
+
+        client = self._client_or_offline()
+        chat = [{"role": "system", "content": system}, *messages]
+        try:
+            if schema:
+                try:
+                    response = client.chat.completions.create(
+                        model=self.model,
+                        messages=chat,
+                        response_format={
+                            "type": "json_schema",
+                            "json_schema": {"name": "copilot_answer", "schema": schema, "strict": True},
+                        },
+                    )
+                except openai.BadRequestError:
+                    chat[0] = {"role": "system", "content": (
+                        f"{system}\n\nAnswer with only a JSON object that matches this JSON schema:\n"
+                        f"{json.dumps(schema)}")}
+                    response = client.chat.completions.create(
+                        model=self.model, messages=chat, response_format={"type": "json_object"})
+            else:
+                response = client.chat.completions.create(model=self.model, messages=chat)
+        except (openai.AuthenticationError, openai.PermissionDeniedError):
+            raise CopilotOffline("the model API credentials are missing or invalid")
+        except openai.RateLimitError:
+            raise CopilotOffline("the model API is rate limiting requests")
+        except openai.APIConnectionError:
+            raise CopilotOffline("the model API could not be reached")
+        except openai.APIStatusError as e:
+            raise CopilotOffline(f"the model API returned an error ({e.status_code})")
+        except openai.OpenAIError:
+            raise CopilotOffline("the model API could not be used")
+        if not response.choices:
+            raise CopilotUnavailable("the model returned no answer")
+        message = response.choices[0].message
+        if getattr(message, "refusal", None):
+            raise CopilotUnavailable("the model declined this request")
+        return message.content or ""
+
+
+def provider_from_env():
+    """(provider, None), or (None, reason) when the environment does not describe a usable model."""
+    name = os.environ.get("COPILOT_PROVIDER", "anthropic").strip().lower()
+    model = os.environ.get("COPILOT_MODEL", "").strip()
+    if name == "anthropic":
+        return AnthropicProvider(model or MODEL), None
+    if name == "openai":
+        if not model:
+            return None, "COPILOT_MODEL is not set"
+        api_key = os.environ.get("COPILOT_API_KEY") or os.environ.get("OPENAI_API_KEY")
+        return OpenAIProvider(model, os.environ.get("COPILOT_BASE_URL") or None, api_key), None
+    return None, f"COPILOT_PROVIDER '{name}' is not supported (use anthropic or openai)"
 
 
 @dataclass
@@ -98,53 +245,35 @@ def keyword_preset(text):
 
 
 class Copilot:
-    def __init__(self, client=None):
-        self._client = client
+    def __init__(self, client=None, provider=None):
+        """``client`` is an Anthropic client for the default Claude model; ``provider`` overrides the environment."""
         self.offline_reason = None
-        if client is None and os.environ.get("COPILOT_OFFLINE"):
-            self.offline_reason = "turned off with COPILOT_OFFLINE"
+        if provider is not None or client is not None:
+            self.provider = provider or AnthropicProvider(MODEL, client)
+        elif os.environ.get("COPILOT_OFFLINE"):
+            self.provider, self.offline_reason = None, "turned off with COPILOT_OFFLINE"
+        else:
+            self.provider, self.offline_reason = provider_from_env()
 
     @property
     def online(self):
         return self.offline_reason is None
 
-    # --- Claude calls -------------------------------------------------------------------------------------
+    @property
+    def model(self):
+        return self.provider.model if self.provider else None
 
-    def _create(self, **kwargs):
-        import anthropic
+    # --- model calls --------------------------------------------------------------------------------------
 
-        if self._client is None:
-            client = anthropic.Anthropic(timeout=60.0, max_retries=1)
-            # The SDK only notices missing credentials when it builds the request (and raises TypeError then)
-            if client.api_key is None and client.auth_token is None and client.credentials is None:
-                self.offline_reason = "no Claude API credentials are configured"
-                raise CopilotUnavailable(self.offline_reason)
-            self._client = client
+    def _create(self, system, messages, max_tokens, schema=None):
         try:
-            response = self._client.beta.messages.create(
-                model=MODEL,
-                betas=[FALLBACK_BETA],
-                fallbacks="default",
-                **kwargs,
-            )
-        except (anthropic.AuthenticationError, anthropic.PermissionDeniedError):
-            self.offline_reason = "the Claude API credentials are missing or invalid"
-        except anthropic.RateLimitError:
-            self.offline_reason = "the Claude API is rate limiting requests"
-        except anthropic.APIConnectionError:
-            self.offline_reason = "the Claude API could not be reached"
-        except anthropic.APIStatusError as e:
-            self.offline_reason = f"the Claude API returned an error ({e.status_code})"
-        except anthropic.AnthropicError:
-            self.offline_reason = "no Claude API credentials are configured"
-        else:
-            if response.stop_reason == "refusal":
-                raise CopilotUnavailable("Claude declined this request")
-            text = "".join(b.text for b in response.content if b.type == "text").strip()
-            if not text:
-                raise CopilotUnavailable("Claude returned an empty answer")
-            return text
-        raise CopilotUnavailable(self.offline_reason)
+            text = self.provider.complete(system, messages, max_tokens, schema).strip()
+        except CopilotOffline as e:
+            self.offline_reason = str(e)
+            raise
+        if not text:
+            raise CopilotUnavailable("the model returned an empty answer")
+        return text
 
     def _interpret_online(self, text, context, history):
         messages = []
@@ -154,16 +283,13 @@ class Copilot:
             "role": "user",
             "content": f"Current room and settings:\n{json.dumps(context, indent=1)}\n\nUser:\n{text}",
         })
-        answer = self._create(
-            max_tokens=8000,
-            system=INTERPRET_SYSTEM,
-            messages=messages,
-            output_config={"effort": "low", "format": {"type": "json_schema", "schema": INTERPRET_SCHEMA}},
-        )
+        answer = self._create(INTERPRET_SYSTEM, messages, 8000, INTERPRET_SCHEMA)
         try:
             data = json.loads(answer)
         except json.JSONDecodeError:
-            raise CopilotUnavailable("Claude returned an answer that is not valid JSON")
+            raise CopilotUnavailable("the model returned an answer that is not valid JSON")
+        if not isinstance(data, dict):
+            raise CopilotUnavailable("the model returned an answer in the wrong shape")
         return data
 
     # --- public API ---------------------------------------------------------------------------------------
@@ -209,11 +335,7 @@ class Copilot:
         if self.online:
             try:
                 return self._create(
-                    max_tokens=4000,
-                    system=EXPLAIN_SYSTEM,
-                    messages=[{"role": "user", "content": json.dumps(summary, indent=1)}],
-                    output_config={"effort": "low"},
-                )
+                    EXPLAIN_SYSTEM, [{"role": "user", "content": json.dumps(summary, indent=1)}], 4000)
             except CopilotUnavailable:
                 pass
         return template_explanation(summary)

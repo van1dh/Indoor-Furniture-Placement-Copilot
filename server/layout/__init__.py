@@ -132,6 +132,8 @@ def _layout(request, room, pieces, preset_name, notes, seed, preferences, placem
             "explanation": copilot.explain(summary) if explain else template_explanation(summary),
             "online": copilot.online,
             "offlineReason": copilot.offline_reason,
+            "provider": copilot.provider.name if copilot.provider else None,
+            "model": copilot.model,
             "reply": reply,
             "notices": notices,
         },

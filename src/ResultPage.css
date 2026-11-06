@@ -229,3 +229,9 @@
 .compare-view {
   max-height: 160px;
 }
+
+.copilot-model {
+  margin: 0 0 4px;
+  font-size: 12px;
+  color: #777;
+}
