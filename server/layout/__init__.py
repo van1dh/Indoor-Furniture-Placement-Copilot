@@ -4,21 +4,38 @@ import random
 from . import flow
 from . import preferences as prefs
 from .catalog import AUTO_PRESET, DEFAULT_PRESET, FURNITURE_TYPES, PRESETS, describe
-from .copilot import Copilot
-from .model import FACING, back_wall_distance, footprint_size, front_point
+from .copilot import Copilot, template_explanation
+from .model import FACING, back_wall_distance, footprint, footprint_size, front_point, outside_area, overlap_area
 from .optimizer import Optimizer, PlacementError
-from .request import InputError, parse_refinement, parse_request
+from .request import InputError, parse_evaluation, parse_refinement, parse_request
+from .scoring import Scorer
 
-__all__ = ["Copilot", "InputError", "PlacementError", "describe", "generate_layout", "refine_layout"]
+__all__ = [
+    "Copilot", "InputError", "PlacementError", "describe", "evaluate_layout", "generate_layout", "refine_layout"]
 
 WALL_BY_ROTATION = {0: "bottom", 180: "top", 90: "left", 270: "right"}  # the wall behind a piece
 
 
-def _warnings(pieces, preset_name, evaluation, scorer):
+def _hard_warnings(room, pieces, placements, scorer):
+    """Overlaps and blocked doors; only layouts arranged by hand can have them."""
+    rects = [footprint(p, pl) for p, pl in zip(pieces, placements)]
+    warnings = []
+    for i, a in enumerate(rects):
+        if outside_area(a, room) > 0.01:
+            warnings.append(f"{pieces[i].label} sticks out of the room.")
+        for j in range(i + 1, len(rects)):
+            if overlap_area(a, rects[j]) > 0.01:
+                warnings.append(f"{pieces[i].label} overlaps {pieces[j].label}.")
+        if any(overlap_area(a, zone) > 0.01 for zone in scorer.door_zones):
+            warnings.append(f"{pieces[i].label} blocks a door from opening.")
+    return warnings
+
+
+def _warnings(room, pieces, placements, preset_name, evaluation, scorer, traffic):
     preset = PRESETS[preset_name]
     labels = {p.id: p.label for p in pieces}
     walkway_in = round(preset["agent_radius"] * 2 * 12)
-    warnings = []
+    warnings = _hard_warnings(room, pieces, placements, scorer) if evaluation.hard_violation else []
     for piece_id in evaluation.unreachable:
         warnings.append(f"{labels[piece_id]} cannot be reached from a door with a {walkway_in} in walkway.")
     for piece_id in evaluation.cramped:
@@ -29,13 +46,15 @@ def _warnings(pieces, preset_name, evaluation, scorer):
         warnings.append(
             f"The largest open play area is {evaluation.open_radius * 2:.1f} ft across; "
             f"{min_play * 2:g} ft is recommended.")
+    if min_play and traffic["playAreaDistance"] >= 3:
+        warnings.append(f"Daily walking routes cross the play area (about {traffic['playAreaDistance']:g} ft a day).")
     if evaluation.terms["window"] > 0.1:
         warnings.append("A tall piece of furniture partly blocks a window.")
     return warnings
 
 
 def _layout(request, room, pieces, preset_name, notes, seed, preferences, placements, evaluation, scorer,
-            copilot, reply, notices):
+            copilot, reply, notices, explain=True):
     furniture = []
     summary_pieces = []
     for piece, placement in zip(pieces, placements):
@@ -62,8 +81,8 @@ def _layout(request, room, pieces, preset_name, notes, seed, preferences, placem
             "faces": {0: "up", 90: "right", 180: "down", 270: "left"}[placement.rotation],
         })
 
-    traffic = flow.simulate(scorer, placements)
-    warnings = _warnings(pieces, preset_name, evaluation, scorer)
+    traffic = flow.simulate(scorer, placements, (evaluation.open_center, evaluation.open_radius))
+    warnings = _warnings(room, pieces, placements, preset_name, evaluation, scorer, traffic)
     preference_status = [
         {**p, "met": met, "text": prefs.describe(p)} for p, met in zip(preferences, evaluation.preferences_met)]
     metrics = {
@@ -76,6 +95,7 @@ def _layout(request, room, pieces, preset_name, notes, seed, preferences, placem
         "unreachable": evaluation.unreachable,
         "cramped": evaluation.cramped,
         "score": round(evaluation.total, 2),
+        "valid": not evaluation.hard_violation,  # no overlaps, nothing outside the room or in a door's way
         "terms": {k: round(v, 3) for k, v in evaluation.terms.items() if scorer.weights[k] and v},
     }
 
@@ -109,7 +129,7 @@ def _layout(request, room, pieces, preset_name, notes, seed, preferences, placem
         "preferences": preference_status,
         "flow": traffic,
         "copilot": {
-            "explanation": copilot.explain(summary),
+            "explanation": copilot.explain(summary) if explain else template_explanation(summary),
             "online": copilot.online,
             "offlineReason": copilot.offline_reason,
             "reply": reply,
@@ -168,3 +188,22 @@ def refine_layout(payload, copilot=None):
     placements, evaluation = optimizer.run()
     return _layout(request, room, pieces, preset_name, notes, seed, preferences, placements, evaluation,
                    optimizer.scorer, copilot, interpretation.reply, interpretation.notices)
+
+
+def evaluate_layout(payload, copilot=None):
+    """Score a layout arranged by hand without moving anything (and without asking Claude, since this runs on
+    every drag)."""
+    copilot = copilot or Copilot()
+    request, placements_by_id = parse_evaluation(payload)
+    room, pieces, preset_name, notes, seed, preferences = parse_request(request)
+    if preset_name == AUTO_PRESET:
+        preset_name = DEFAULT_PRESET
+    missing = [p.label for p in pieces if p.id not in placements_by_id]
+    if missing:
+        raise InputError(f"layout does not place {', '.join(missing)}")
+    placements = [placements_by_id[p.id] for p in pieces]
+    preferences = preferences or []
+    scorer = Scorer(room, pieces, preset_name, preferences)
+    evaluation = scorer.evaluate(placements)
+    return _layout(request, room, pieces, preset_name, notes, seed, preferences, placements, evaluation, scorer,
+                   copilot, None, [], explain=False)

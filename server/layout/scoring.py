@@ -30,6 +30,8 @@ WINDOW_ZONE_DEPTH = 1.5
 IDEAL_VIEWING_DISTANCE = 8.0
 HAZARD_MARGIN = 3.0
 HARD_TERMS = ("overlap", "out_of_room", "door")
+# A typical day for one occupant: stops at the front of their furniture and at the door
+ROUTINE = ("bed", "wardrobe", "door", "desk", "sofa", "wardrobe", "bed")
 
 
 @dataclass
@@ -165,6 +167,12 @@ class Scorer:
                 gap = rect_point_distance(rects[i], open_center) - open_radius
                 terms["hazard"] += max(0.0, HAZARD_MARGIN - float(gap))
 
+        if self.weights["play_traffic"]:
+            # Straight lines stand in for the walking routes here; the grid search is too slow for the optimizer
+            terms["play_traffic"] = sum(
+                chord_length(a, b, open_center, open_radius)
+                for legs in self.routine_legs(placements) for a, b in legs)
+
         terms["viewing"] = self._viewing_cost(placements)
         terms["privacy"], terms["desk_group"] = self._sharing_costs(placements)
         terms["preferences"], met = prefs.evaluate(self.preferences, room, pieces, placements)
@@ -176,6 +184,20 @@ class Scorer:
 
         total = sum(self.weights[name] * value for name, value in terms.items())
         return Evaluation(total, terms, unreachable, cramped, open_radius, open_center, met)
+
+    def routine_legs(self, placements):
+        """The trips of a typical day as [(start, end), ...] for each occupant (one per bed, at least one)."""
+        stops_by_type = {}
+        for piece, placement in zip(self.pieces, placements):
+            point = front_point(piece, placement, self.radius + GRID_RESOLUTION)
+            stops_by_type.setdefault(piece.type, []).append(point)
+        stops_by_type["door"] = self.door_points[:1]
+        occupants = max(1, len(stops_by_type.get("bed", [])))
+        routines = []
+        for person in range(occupants):
+            stops = [options[person % len(options)] for kind in ROUTINE if (options := stops_by_type.get(kind))]
+            routines.append(list(zip(stops, stops[1:])))
+        return routines
 
     def walk_grid(self, rects):
         """(free floor, clearance in feet, cells where the agent's centre fits) for furniture footprints."""
@@ -219,3 +241,21 @@ class Scorer:
         privacy = -min(bed_gaps) if bed_gaps else 0.0
         grouping = sum(desk_gaps) / len(desk_gaps) if desk_gaps else 0.0
         return privacy, grouping
+
+
+def chord_length(a, b, center, radius):
+    """Length of the part of segment a-b that lies inside a circle."""
+    ax, ay = a[0] - center[0], a[1] - center[1]
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    qa = dx * dx + dy * dy
+    if qa == 0 or radius <= 0:
+        return 0.0
+    qb = 2 * (ax * dx + ay * dy)
+    qc = ax * ax + ay * ay - radius * radius
+    disc = qb * qb - 4 * qa * qc
+    if disc <= 0:
+        return 0.0
+    root = math.sqrt(disc)
+    t0 = max((-qb - root) / (2 * qa), 0.0)
+    t1 = min((-qb + root) / (2 * qa), 1.0)
+    return max(t1 - t0, 0.0) * math.sqrt(qa)

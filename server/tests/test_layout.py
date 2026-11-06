@@ -229,3 +229,28 @@ def test_cli_reports_errors(payload, expected_code):
     code, result = run_cli([], payload)
     assert code == expected_code
     assert result["error"]
+
+
+def test_chord_length():
+    from layout.scoring import chord_length
+    assert chord_length((-5, 0), (5, 0), (0, 0), 2) == pytest.approx(4)
+    assert chord_length((0, 0), (5, 0), (0, 0), 2) == pytest.approx(2)
+    assert chord_length((-5, 3), (5, 3), (0, 0), 2) == 0
+    assert chord_length((1, 1), (1, 1), (0, 0), 2) == 0
+
+
+def test_child_safe_routes_go_around_the_play_area():
+    furniture = [{"type": "bed", "count": 1}, {"type": "desk", "count": 1}, {"type": "wardrobe", "count": 1},
+                 {"type": "sofa", "count": 1}, {"type": "tv", "count": 1}]
+    crossing = {}
+    for weight in (0, 1):
+        weights = PRESETS["child_safe"]["weights"]
+        original = weights["play_traffic"]
+        weights["play_traffic"] = weight
+        try:
+            crossing[weight] = sum(
+                generate_layout(make_request(preset="child_safe", furniture=furniture, seed=seed))
+                ["flow"]["playAreaDistance"] for seed in range(4))
+        finally:
+            weights["play_traffic"] = original
+    assert crossing[1] < crossing[0]

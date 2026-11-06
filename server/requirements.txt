@@ -1,4 +1,5 @@
 numpy>=1.24
 scipy>=1.10
 anthropic>=2.6
-pytest>=8
+fastapi>=0.115
+uvicorn[standard]>=0.30

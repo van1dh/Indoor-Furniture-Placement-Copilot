@@ -7,10 +7,8 @@ cells it crosses are counted, giving a traffic heatmap and the distance walked p
 import heapq
 import math
 
-from .model import footprint, front_point
+from .model import footprint
 from .scoring import GRID_RESOLUTION
-
-ROUTINE = ("bed", "wardrobe", "door", "desk", "sofa", "wardrobe", "bed")
 NEIGHBOURS = [(dr, dc, math.hypot(dr, dc)) for dr in (-1, 0, 1) for dc in (-1, 0, 1) if dr or dc]
 
 
@@ -58,29 +56,27 @@ def _shortest_path(walkable, start, goal):
     return None, None
 
 
-def simulate(scorer, placements):
-    pieces = scorer.pieces
+def simulate(scorer, placements, play_area=None):
+    """Walk every occupant's routine. ``play_area`` is an optional ((x, y), radius) circle; the distance walked
+    through it is reported as ``playAreaDistance``."""
     res = GRID_RESOLUTION
-    rects = [footprint(p, pl) for p, pl in zip(pieces, placements)]
+    rects = [footprint(p, pl) for p, pl in zip(scorer.pieces, placements)]
     _, _, walkable = scorer.walk_grid(rects)
 
-    stops_by_type = {}
-    for piece, placement in zip(pieces, placements):
-        point = front_point(piece, placement, scorer.radius + res)
-        stops_by_type.setdefault(piece.type, []).append(point)
-    stops_by_type["door"] = scorer.door_points[:1]
+    def cell_center(cell):
+        r, c = cell
+        return (c - scorer.pad + 0.5) * res, (r - scorer.pad + 0.5) * res
 
-    occupants = max(1, len(stops_by_type.get("bed", [])))
+    def in_play_area(point):
+        return play_area is not None and math.dist(point, play_area[0]) < play_area[1]
+
+    routines = scorer.routine_legs(placements)
     counts = {}
     distance = 0.0
+    play_distance = 0.0
     missed = 0
-    for person in range(occupants):
-        stops = []
-        for kind in ROUTINE:
-            options = stops_by_type.get(kind)
-            if options:
-                stops.append(options[person % len(options)])
-        for a, b in zip(stops, stops[1:]):
+    for legs in routines:
+        for a, b in legs:
             start = _nearest_walkable(walkable, scorer._cell(*a))
             goal = _nearest_walkable(walkable, scorer._cell(*b))
             path, length = _shortest_path(walkable, start, goal) if start and goal else (None, None)
@@ -90,17 +86,23 @@ def simulate(scorer, placements):
             distance += length * res
             for cell in path:
                 counts[cell] = counts.get(cell, 0) + 1
+            for p, q in zip(path, path[1:]):
+                (px, py), (qx, qy) = cell_center(p), cell_center(q)
+                if in_play_area(((px + qx) / 2, (py + qy) / 2)):
+                    play_distance += math.dist((px, py), (qx, qy))
 
-    cells = [
-        [round((c - scorer.pad + 0.5) * res, 2), round((r - scorer.pad + 0.5) * res, 2), n]
-        for (r, c), n in sorted(counts.items())
-        if 0 <= (c - scorer.pad + 0.5) * res <= scorer.room.width and 0 <= (r - scorer.pad + 0.5) * res <= scorer.room.length
-    ]
+    cells = []
+    for cell, n in sorted(counts.items()):
+        x, y = cell_center(cell)
+        if 0 <= x <= scorer.room.width and 0 <= y <= scorer.room.length:
+            cells.append([round(x, 2), round(y, 2), n])
+    occupants = len(routines)
     return {
         "cellSize": res,
         "cells": cells,
         "maxCount": max((n for _, _, n in cells), default=0),
         "occupants": occupants,
         "dailyDistance": round(distance / occupants, 1),
+        "playAreaDistance": round(play_distance / occupants, 1),
         "missedTrips": missed,
     }

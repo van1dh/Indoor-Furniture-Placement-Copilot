@@ -144,6 +144,34 @@ def _text(value, name, limit):
     return value.strip()
 
 
+def _placements(layout):
+    """Placements by piece id from a layout's furniture list ({id, x, y, rotation} items)."""
+    if not isinstance(layout, dict):
+        raise InputError("layout must be an object")
+    furniture = layout.get("furniture") or []
+    if not isinstance(furniture, list) or len(furniture) > LIMITS["max_total"]:
+        raise InputError(f"layout furniture must be a list of at most {LIMITS['max_total']} pieces")
+    placements = {}
+    for item in furniture:
+        try:
+            x, y, rotation = float(item["x"]), float(item["y"]), int(item["rotation"])
+        except (KeyError, TypeError, ValueError):
+            raise InputError("layout furniture needs x, y and rotation")
+        if not (math.isfinite(x) and math.isfinite(y)) or max(abs(x), abs(y)) > 2 * LIMITS["room_max"]:
+            raise InputError("layout furniture positions must be inside the room")
+        if rotation not in ROTATIONS:
+            raise InputError("rotation must be 0, 90, 180 or 270")
+        placements[str(item.get("id"))] = Placement(x, y, rotation)
+    return placements
+
+
+def parse_evaluation(payload):
+    """Validate an evaluate request: a layout arranged by hand. Returns (request, placements by piece id)."""
+    if not isinstance(payload, dict) or not isinstance(payload.get("request"), dict):
+        raise InputError("request is required")
+    return payload["request"], _placements(payload.get("layout"))
+
+
 def parse_refinement(payload):
     """Validate a refine request: the layout to change, the user's message and the chat so far.
 
@@ -151,17 +179,7 @@ def parse_refinement(payload):
     if not isinstance(payload, dict) or not isinstance(payload.get("request"), dict):
         raise InputError("request is required")
     message = _text(payload.get("message"), "message", LIMITS["notes_max"])
-
-    placements = {}
-    layout = payload.get("layout") or {}
-    for item in layout.get("furniture") or [] if isinstance(layout, dict) else []:
-        try:
-            x, y, rotation = float(item["x"]), float(item["y"]), int(item["rotation"])
-        except (KeyError, TypeError, ValueError):
-            raise InputError("layout furniture needs x, y and rotation")
-        if rotation not in ROTATIONS:
-            raise InputError("rotation must be 0, 90, 180 or 270")
-        placements[str(item.get("id"))] = Placement(x, y, rotation)
+    placements = _placements(payload.get("layout") or {})
 
     history = payload.get("history") or []
     if not isinstance(history, list) or len(history) > 20:

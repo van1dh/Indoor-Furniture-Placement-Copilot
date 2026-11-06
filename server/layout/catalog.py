@@ -61,11 +61,12 @@ PRESETS = {
     },
     "child_safe": {
         "label": "Child-safe",
-        "description": "A large open play area, with fragile, sharp and tall furniture against the walls and away from it.",
+        "description": "A large open play area that daily walking routes go around, with fragile, sharp and tall furniture against the walls and away from it.",
         "agent_radius": 1.25,
         "min_front_clearance": 0.0,
         "min_play_radius": 3.0,
-        "weights": {"wall": 10, "open_space": 12, "window": 10, "viewing": 2, "hazard": 8, "play_area": 40},
+        "weights": {"wall": 10, "open_space": 12, "window": 10, "viewing": 2, "hazard": 8, "play_area": 40,
+                    "play_traffic": 1},
     },
     "accessible": {
         "label": "Wheelchair accessible",
@@ -99,6 +100,7 @@ BASE_WEIGHTS = {
     "viewing": 3,
     "hazard": 0,
     "play_area": 0,
+    "play_traffic": 0,  # daily walking routes that cross the open play area
     "privacy": 0,
     "desk_group": 0,
     "preferences": 1,  # preferences carry their own strength weights

@@ -83,3 +83,21 @@
 .layout-traffic rect {
   fill: #f57c00;
 }
+
+.layout-view-editable .layout-piece {
+  cursor: grab;
+  touch-action: none;
+}
+
+.layout-view-editable .layout-piece:active {
+  cursor: grabbing;
+}
+
+.layout-piece:focus {
+  outline: none;
+}
+
+.layout-piece-selected rect {
+  stroke: #1a73e8;
+  stroke-width: 0.15;
+}

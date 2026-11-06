@@ -1,4 +1,7 @@
-export const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+import { placements } from './editing';
+
+// Empty when the API is served from the same origin as the app (as in the Docker image)
+export const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:5000';
 
 async function request(path, options) {
   let response;
@@ -36,10 +39,15 @@ export function generateLayout(body) {
 export function refineLayout(layout, message, history) {
   return post('/api/refine', {
     request: layout.request,
-    layout: { furniture: layout.furniture.map(({ id, x, y, rotation }) => ({ id, x, y, rotation })) },
+    layout: { furniture: placements(layout) },
     message,
     history,
   });
+}
+
+// Score a layout arranged by hand, without moving anything
+export function evaluateLayout(layout) {
+  return post('/api/evaluate', { request: layout.request, layout: { furniture: placements(layout) } });
 }
 
 // Form state keeps every field as a string so inputs can be empty while the user types.

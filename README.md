@@ -12,30 +12,27 @@ Yongyi Xie xyy0208@bu.edu
 
 | Path | Contents |
 | --- | --- |
-| `src/` | React frontend (Welcome, Generation and Result pages) |
-| `server/` | Express API (`index.js`), the layout engine and copilot (`layout/`) and their command-line entry point (`placement_generation.py`) |
-| `server/tests/` | API tests (`node --test`) and generator tests (`pytest`) |
+| `src/` | React frontend built with Vite (Welcome, Generation and Result pages) |
+| `server/` | FastAPI app (`app.py`), the layout engine and copilot (`layout/`) and a command-line entry point (`placement_generation.py`) |
+| `server/tests/` | API, layout engine and copilot tests (`pytest`) |
 | `simulation/` | Daily activity path simulation (`path_simulation.py`) and sample output |
 | `notebooks/` | Path and layout visualization notebook |
 | `docs/` | Course deliverables (project plan, slides, poster, reports) |
 
 ## Getting Started
 
-Requirements: Node.js 18+ and Python 3.9+.
+Requirements: Node.js 20+ and Python 3.10+. Or run everything with Docker (below).
 
 ### 1. Backend (port 5000)
 
 ```bash
 cd server
 python -m venv .venv
-.venv/Scripts/python -m pip install -r requirements.txt   # macOS/Linux: .venv/bin/python
-npm install
-npm start
+.venv/Scripts/python -m pip install -r requirements-dev.txt   # macOS/Linux: .venv/bin/python
+.venv/Scripts/python -m uvicorn app:app --port 5000 --reload
 ```
 
-The server runs the layout engine with `server/.venv`'s Python when it exists; otherwise set `PYTHON` to the interpreter to use.
-
-To turn on the Claude copilot, give the server Claude API credentials before `npm start`, e.g.
+To turn on the Claude copilot, give the server Claude API credentials before starting it, e.g.
 `export ANTHROPIC_API_KEY=...` (or sign in with `ant auth login`). Without credentials the app still works; see
 [The copilot](#the-copilot).
 
@@ -43,11 +40,21 @@ To turn on the Claude copilot, give the server Claude API credentials before `np
 
 ```bash
 npm install
-npm start
+npm run dev
 ```
 
-Open http://localhost:3000. To point the frontend at a different API, set `REACT_APP_API_URL` (default `http://localhost:5000`);
-to accept a different frontend origin on the server, set `CLIENT_ORIGIN` (default `http://localhost:3000`).
+Open http://localhost:3000. To point the frontend at a different API, set `VITE_API_URL` (default `http://localhost:5000`);
+to accept other frontend origins on the server, set `CLIENT_ORIGIN` (comma-separated, default `http://localhost:3000`).
+
+### Docker
+
+```bash
+docker build -t furniture-copilot .
+docker run -p 8000:8000 -e ANTHROPIC_API_KEY furniture-copilot
+```
+
+The image serves the built frontend and the API together on http://localhost:8000. Leave out `-e ANTHROPIC_API_KEY`
+to run with the copilot offline.
 
 ### API
 
@@ -94,6 +101,19 @@ Responses:
 The copilot updates the preset and preferences, and the engine starts from the current layout and pays for every
 piece it moves, so only what the message is about changes. It returns a layout like `/api/generate`.
 
+`POST /api/evaluate` scores a layout arranged by hand without moving anything:
+`{"request": <layout.request>, "layout": {"furniture": [{"id", "x", "y", "rotation"}, ...]}}` with every piece placed.
+It returns a layout like `/api/generate`; `metrics.valid` is false and `warnings` say why when pieces overlap, stick
+out of the room or block a door. The explanation comes from the template, so dragging never waits for Claude.
+
+## Editing, comparing and exporting
+
+On the result page you can drag furniture (or select a piece and use the arrow keys, Shift for small steps, and R
+to rotate it); each change is re-scored by `/api/evaluate`. Undo steps back through every change: edits, chat
+requests and new layouts. **Save to compare** keeps up to four layouts side by side with their open area, walking
+distance, warnings and preferences met, the best of each in bold. **Download PNG** saves the floor plan as an image
+and **Download JSON** saves the whole layout.
+
 ## The copilot
 
 `server/layout/copilot.py` uses Claude (`claude-opus-5-5`, low effort, with server-side refusal fallbacks) to:
@@ -112,6 +132,10 @@ After a layout is chosen, `server/layout/flow.py` simulates a day for each occup
 bed → wardrobe → door → desk → sofa → wardrobe → bed, each trip along the shortest walkway. The result page shows
 the walking distance per person and, on request, a heatmap of where people walk.
 
+The child-safe preset also keeps these routes out of the play area. Searching walkways is too slow for every step
+of the optimizer, so it scores straight lines between the stops instead; across sample rooms this halves the
+walking through the play area for a slightly smaller open area. A warning says when routes still cross it.
+
 ## How layouts are generated
 
 The engine in `server/layout/` searches for a layout with simulated annealing (4 restarts × 1200 steps), scoring each candidate:
@@ -129,7 +153,7 @@ Presets reweight these rules for the user stories:
 | Preset | What changes |
 | --- | --- |
 | Balanced | Defaults: 30 in walkways. |
-| Child-safe | Large open play area (at least 6 ft across); fragile, sharp and tall pieces against walls and away from it. |
+| Child-safe | Large open play area (at least 6 ft across) that daily routes go around; fragile, sharp and tall pieces against walls and away from it. |
 | Wheelchair accessible | 36 in walkways and 5 ft turning space in front of every piece. |
 | Shared studio | Beds spread apart for privacy, desks grouped for group work, more open space. |
 
@@ -138,10 +162,12 @@ When the room is too tight for a preset's rules the layout is still returned, wi
 ### Tests
 
 ```bash
-npm test -- --watchAll=false          # frontend
-cd server && npm test                 # API
-cd server && .venv/Scripts/python -m pytest tests   # layout engine
+npm test                                  # frontend (Vitest)
+cd server && .venv/Scripts/python -m pytest   # API, layout engine and copilot
 ```
+
+GitHub Actions (`.github/workflows/ci.yml`) runs both, builds the frontend and the Docker image, and smoke-tests
+the image.
 
 ## User Stories
 ### User Story 1: Child-Safe Room Design for Parents
@@ -162,10 +188,6 @@ Express.js creation. This involves creating the backend part. Using node.js, I i
 I use React package to implement the frame. All codes in master branch.
 
 12/5: Connect frontend (on localhost:3000) to backend (on localhost:5000/api/generate), and go through unit testing.
-
-## Roadmap
-
-- Drag furniture to adjust a layout, compare several layouts side by side, export to PNG or JSON.
 
 ## References
 [1] L. Yanhua, “Optimizing Space with AI: Intelligent Design Solutions for Soft Furnishings and Decor,” International Journal of Science and Engineering Applications, vol. 13, no. 7, Jun. 2024, doi: https://doi.org/10.7753/ijsea1307.1008

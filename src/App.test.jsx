@@ -5,6 +5,8 @@ import GenerationPage from './GenerationPage';
 import LayoutView from './LayoutView';
 import ResultPage from './ResultPage';
 import { buildRequest, formFromOptions, validateForm } from './api';
+import { movePiece, placements, rotatePiece } from './editing';
+import { layoutFilename, standaloneSvg } from './exportLayout';
 
 const options = {
   furniture: {
@@ -95,7 +97,7 @@ test('LayoutView draws each piece and flags unreachable ones', () => {
 });
 
 test('GenerationPage builds its form from the server options', async () => {
-  global.fetch = jest.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve(options) });
+  global.fetch = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve(options) });
   render(
     <MemoryRouter>
       <GenerationPage />
@@ -132,7 +134,7 @@ describe('ResultPage', () => {
 
   test('sends chat messages to the refine endpoint and shows the reply', async () => {
     const refined = { ...layout, copilot: { ...layout.copilot, reply: 'Moved the desk.' } };
-    global.fetch = jest.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve(refined) });
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve(refined) });
     renderResult();
     fireEvent.change(screen.getByRole('textbox', { name: /message to the copilot/i }), {
       target: { value: 'Move the desk' },
@@ -148,11 +150,84 @@ describe('ResultPage', () => {
     expect(body.layout.furniture[0]).toEqual({ id: 'bed-1', x: 12.75, y: 9, rotation: 270 });
   });
 
+  test('moving a piece with the keyboard re-scores it, and undo brings it back', async () => {
+    const scored = { ...layout, warnings: ['Bed overlaps Desk.'] };
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve(scored) });
+    renderResult();
+    const bed = screen.getByRole('button', { name: /^bed: drag/i });
+    fireEvent.focus(bed);
+    fireEvent.keyDown(bed, { key: 'ArrowLeft' });
+
+    expect(await screen.findByText('Bed overlaps Desk.')).toBeInTheDocument();
+    const [url, init] = global.fetch.mock.calls[0];
+    expect(url).toMatch(/\/api\/evaluate$/);
+    expect(JSON.parse(init.body).layout.furniture[0]).toEqual({ id: 'bed-1', x: 11.75, y: 9, rotation: 270 });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    expect(screen.queryByText('Bed overlaps Desk.')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Undo' })).toBeDisabled();
+  });
+
+  test('rotates the selected piece', async () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve(layout) });
+    renderResult();
+    expect(screen.getByRole('button', { name: 'Rotate' })).toBeDisabled();
+    fireEvent.focus(screen.getByRole('button', { name: /^desk: drag/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Rotate Desk' }));
+    await screen.findByRole('button', { name: 'Undo' });
+    const body = JSON.parse(global.fetch.mock.calls[0][1].body);
+    expect(body.layout.furniture[1]).toEqual({ id: 'desk-1', x: 2, y: 12, rotation: 270 });
+  });
+
+  test('saves layouts to compare and opens them again', () => {
+    renderResult();
+    fireEvent.click(screen.getByRole('button', { name: 'Save to compare' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save to compare' }));
+    expect(screen.getByRole('region', { name: 'Layout A' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Layout B' })).toHaveTextContent('42.5 ft');
+    fireEvent.click(screen.getAllByRole('button', { name: 'Remove' })[0]);
+    expect(screen.queryByRole('region', { name: 'Layout A' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+    expect(screen.getByRole('button', { name: 'Undo' })).toBeEnabled();
+  });
+
   test('removing a preference regenerates without it', async () => {
-    global.fetch = jest.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ ...layout, preferences: [] }) });
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ ...layout, preferences: [] }) });
     renderResult();
     fireEvent.click(screen.getByRole('button', { name: /remove preference: bed near the window/i }));
     await screen.findByRole('button', { name: /try another layout/i });
     expect(JSON.parse(global.fetch.mock.calls[0][1].body).preferences).toEqual([]);
+  });
+});
+
+describe('editing', () => {
+  test('moves a piece on a quarter-foot grid and keeps it inside the room', () => {
+    const moved = movePiece(layout, 'bed-1', 3.1, 20);
+    const bed = moved.furniture[0];
+    expect([bed.x, bed.y]).toEqual([3.25, 11.5]); // the bed is 6.5 x 5 ft on the floor, the room 14 ft long
+    expect(bed.front).toEqual({ x: 0, y: 11.5, direction: [-1, 0] });
+    expect(moved.furniture[1]).toBe(layout.furniture[1]);
+  });
+
+  test('rotates a piece a quarter turn clockwise and swaps its footprint', () => {
+    const desk = rotatePiece(layout, 'desk-1').furniture[1];
+    expect(desk.rotation).toBe(270);
+    expect(desk.footprint).toEqual({ width: 2, length: 4 });
+    expect([desk.x, desk.y]).toEqual([2, 12]); // pulled back inside the top wall
+    expect(placements(rotatePiece(layout, 'bed-1'))[0].rotation).toBe(0);
+  });
+});
+
+describe('export', () => {
+  test('builds a standalone SVG with inline styles', () => {
+    const { container } = render(<LayoutView layout={layout} />);
+    const markup = standaloneSvg(container.querySelector('svg'), 10);
+    expect(markup).toMatch(/^<svg[^>]+xmlns="http:\/\/www.w3.org\/2000\/svg"/);
+    expect(markup).toMatch(/width="190"/); // (16 + 2 * 1.5) ft at 10 px per foot
+    expect(markup).toContain('style=');
+  });
+
+  test('names files after the preset and seed', () => {
+    expect(layoutFilename({ preset: 'default', seed: 1 }, 'png')).toBe('layout-default-1.png');
   });
 });
