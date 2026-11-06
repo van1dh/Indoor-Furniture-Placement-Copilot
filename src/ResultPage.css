@@ -1,54 +1,58 @@
 .result-container {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    height: 100vh;
-    background-image: url('./assets/images/background.png');
-    background-size: cover;
-    background-position: center;
-    background-repeat: no-repeat;
-  }
-  
-  .back-button {
-    position: absolute;
-    top: 20px;
-    left: 20px;
-    padding: 10px 15px;
-    background-color: rgba(0, 123, 255, 0.8);
-    color: white;
-    border: none;
-    border-radius: 5px;
-    cursor: pointer;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
-  }
-  
-  .back-button:hover {
-    background-color: rgba(0, 86, 179, 0.8);
-  }
-  
-  .result-content {
-    text-align: center;
-    background-color: rgba(255, 255, 255, 0.9);
-    padding: 20px;
-    border-radius: 10px;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
-    max-width: 80%;
-  }
-  
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 100vh;
+  padding: 72px 16px 40px;
+  box-sizing: border-box;
+  background-image: url('./assets/images/background.png');
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+}
 
-  .result-content h2 {
-    font-size: 2rem;
-    margin-bottom: 20px;
-    color: #333;
-  }
-  
+.result-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  max-width: 720px;
+  box-sizing: border-box;
+  background-color: rgba(255, 255, 255, 0.94);
+  padding: 20px;
+  border-radius: 10px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+}
 
-  .result-image {
-    max-width: 100%;
-    height: auto;
-    border: 1px solid #ccc;
-    border-radius: 10px;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-  }
-  
+.result-content h2 {
+  font-size: 2rem;
+  margin: 0;
+  color: #333;
+}
+
+.result-summary {
+  width: 100%;
+  font-size: 14px;
+  color: #333;
+}
+
+.result-summary p {
+  margin: 0 0 8px;
+}
+
+.result-warnings {
+  margin: 0 0 8px;
+  padding-left: 20px;
+  color: #b00020;
+}
+
+.result-ok {
+  color: #2e7d32;
+}
+
+.result-notes {
+  color: #666;
+  font-style: italic;
+}

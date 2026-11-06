@@ -7,8 +7,7 @@ const cors = require('cors');
 const PORT = process.env.PORT || 5000;
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || 'http://localhost:3000';
 const SCRIPT_PATH = path.join(__dirname, 'placement_generation.py');
-const GENERATED_DIR = path.join(__dirname, 'generated');
-const SCRIPT_TIMEOUT_MS = 30000;
+const SCRIPT_TIMEOUT_MS = 60000;
 
 // Prefer the server's virtualenv if it exists, then $PYTHON, then the platform default.
 function resolvePython() {
@@ -24,9 +23,9 @@ function resolvePython() {
 
 const PYTHON = resolvePython();
 
-function runPlacementScript(request) {
+function runPlacementScript(args, input) {
   return new Promise((resolve, reject) => {
-    const child = spawn(PYTHON, [SCRIPT_PATH, '--output-dir', GENERATED_DIR], {
+    const child = spawn(PYTHON, [SCRIPT_PATH, ...args], {
       cwd: __dirname,
       timeout: SCRIPT_TIMEOUT_MS,
     });
@@ -47,21 +46,42 @@ function runPlacementScript(request) {
       resolve({ code, result });
     });
 
-    child.stdin.end(JSON.stringify(request));
+    child.stdin.end(input === undefined ? '' : JSON.stringify(input));
   });
+}
+
+// The options only change when the Python code does, so ask once and reuse the answer.
+let optionsPromise = null;
+function getOptions() {
+  if (!optionsPromise) {
+    optionsPromise = runPlacementScript(['--describe']).then(({ code, result }) => {
+      if (code !== 0) throw new Error(result.error || 'Could not load options');
+      return result;
+    });
+    optionsPromise.catch(() => { optionsPromise = null; });
+  }
+  return optionsPromise;
 }
 
 const app = express();
 app.use(cors({ origin: CLIENT_ORIGIN }));
-app.use(express.json({ limit: '10kb' }));
-app.use('/generated', express.static(GENERATED_DIR));
+app.use(express.json({ limit: '20kb' }));
+
+app.get('/api/options', async (req, res) => {
+  try {
+    res.json(await getOptions());
+  } catch (err) {
+    console.error('Failed to load options:', err);
+    res.status(500).json({ error: 'Could not load options' });
+  }
+});
 
 app.post('/api/generate', async (req, res) => {
-  const { bed, desk, tv, wardrobe, notes } = req.body || {};
+  const { preset, room, furniture, notes, seed } = req.body || {};
   try {
-    const { code, result } = await runPlacementScript({ bed, desk, tv, wardrobe, notes });
-    if (code === 0 && result.image) {
-      return res.json({ imageUrl: `/generated/${result.image}` });
+    const { code, result } = await runPlacementScript([], { preset, room, furniture, notes, seed });
+    if (code === 0 && !result.error) {
+      return res.json(result);
     }
     // 2 = invalid input, 3 = furniture does not fit; both are the client's to fix
     const status = code === 2 || code === 3 ? 400 : 500;

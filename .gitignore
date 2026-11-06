@@ -24,7 +24,6 @@ yarn-error.log*
 
 # server
 node_modules/
-server/generated/
 server/.venv/
 __pycache__/
 .pytest_cache/

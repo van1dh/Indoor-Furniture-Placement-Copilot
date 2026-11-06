@@ -1,0 +1,81 @@
+.layout-view {
+  width: 100%;
+  height: auto;
+  max-height: 70vh;
+  display: block;
+}
+
+.layout-floor {
+  fill: #faf7f2;
+}
+
+.layout-walls {
+  fill: none;
+  stroke: #333;
+}
+
+.layout-opening-gap {
+  stroke: #faf7f2;
+  stroke-width: 0.3;
+}
+
+.layout-door-leaf {
+  stroke: #555;
+  stroke-width: 0.08;
+}
+
+.layout-door-swing {
+  fill: none;
+  stroke: #999;
+  stroke-width: 0.05;
+  stroke-dasharray: 0.2 0.15;
+}
+
+.layout-window-glass {
+  stroke: #4a90d9;
+  stroke-width: 0.12;
+}
+
+.layout-open-space {
+  fill: rgba(76, 175, 80, 0.12);
+  stroke: #4caf50;
+  stroke-width: 0.06;
+  stroke-dasharray: 0.3 0.2;
+}
+
+.layout-piece rect {
+  stroke: #445;
+  stroke-width: 0.06;
+}
+
+.layout-piece-front {
+  stroke: #223;
+  stroke-width: 0.2;
+  stroke-linecap: round;
+}
+
+.layout-piece text {
+  fill: #223;
+  text-anchor: middle;
+  dominant-baseline: central;
+  font-family: system-ui, sans-serif;
+}
+
+.layout-piece-bed rect { fill: #c7d2fe; }
+.layout-piece-desk rect { fill: #fde68a; }
+.layout-piece-tv rect { fill: #fecaca; }
+.layout-piece-wardrobe rect { fill: #d9f99d; }
+.layout-piece-sofa rect { fill: #bae6fd; }
+
+.layout-piece-flagged rect {
+  stroke: #d32f2f;
+  stroke-width: 0.15;
+}
+
+.layout-dimension {
+  fill: #666;
+  font-size: 0.6px;
+  text-anchor: middle;
+  dominant-baseline: central;
+  font-family: system-ui, sans-serif;
+}

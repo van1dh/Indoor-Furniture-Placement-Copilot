@@ -13,7 +13,7 @@ Yongyi Xie xyy0208@bu.edu
 | Path | Contents |
 | --- | --- |
 | `src/` | React frontend (Welcome, Generation and Result pages) |
-| `server/` | Express API (`index.js`) and the Python layout generator (`placement_generation.py`) |
+| `server/` | Express API (`index.js`), the layout engine (`layout/`) and its command-line entry point (`placement_generation.py`) |
 | `server/tests/` | API tests (`node --test`) and generator tests (`pytest`) |
 | `simulation/` | Daily activity path simulation (`path_simulation.py`) and sample output |
 | `notebooks/` | Path and layout visualization notebook |
@@ -33,8 +33,7 @@ npm install
 npm start
 ```
 
-The server runs the generator with `server/.venv`'s Python when it exists; otherwise set `PYTHON` to the interpreter to use.
-Generated images are written to `server/generated/` and served at `/generated/<file>.png`.
+The server runs the layout engine with `server/.venv`'s Python when it exists; otherwise set `PYTHON` to the interpreter to use.
 
 ### 2. Frontend (port 3000)
 
@@ -48,19 +47,64 @@ to accept a different frontend origin on the server, set `CLIENT_ORIGIN` (defaul
 
 ### API
 
-`POST /api/generate` with JSON `{"bed": 1, "desk": 1, "tv": 1, "wardrobe": 1, "notes": "..."}`.
-Each count is a whole number from 0 to 4, with at least one piece in total; notes are at most 500 characters.
+`GET /api/options` returns the furniture types and default sizes, the presets, input limits and form defaults.
 
-- `200 {"imageUrl": "/generated/<id>.png"}`
+`POST /api/generate` takes a layout request (lengths in feet):
+
+```json
+{
+  "preset": "child_safe",
+  "room": {
+    "width": 16, "length": 14,
+    "doors": [{"wall": "bottom", "offset": 1, "width": 3}],
+    "windows": [{"wall": "top", "offset": 5, "width": 5}]
+  },
+  "furniture": [{"type": "bed", "count": 1, "width": 5, "depth": 6.5}, {"type": "desk", "count": 1}],
+  "notes": "toddler at home",
+  "seed": 42
+}
+```
+
+- `wall` is `bottom`, `right`, `top` or `left`; `offset` runs from the wall's left (bottom/top) or bottom (left/right) end.
+- Furniture `width` runs along the front and `depth` front to back; both default to the type's usual size.
+- `seed` is optional; the same request and seed always give the same layout.
+
+Responses:
+
+- `200` with the layout: `room`, `furniture` (centre `x`/`y`, `rotation` = direction the front faces, 0 = up, 90 = right, …),
+  `metrics` (largest open area, walkway width, unreachable or cramped pieces, cost breakdown), `warnings` and the `seed` used
 - `400 {"error": "..."}` for invalid input or furniture that does not fit
-- `500 {"error": "..."}` if the generator fails
+- `500 {"error": "..."}` if the engine fails
+
+## How layouts are generated
+
+The engine in `server/layout/` searches for a layout with simulated annealing (4 restarts × 1200 steps), scoring each candidate:
+
+| Kind | Rule |
+| --- | --- |
+| Hard | No overlaps, everything inside the room, nothing in a door's swing. A request that cannot meet these is rejected. |
+| Walkways | A person (or wheelchair) must fit between furniture and walls on the way from a door to the front of every piece. |
+| Clearance | Free floor in front of each piece (e.g. 3 ft for a desk). |
+| Placement | Beds, desks, TV stands and wardrobes back onto a wall; tall furniture stays clear of windows; the TV faces the sofa or bed. |
+| Open space | The largest open circle of floor, away from furniture, walls and door swings. |
+
+Presets reweight these rules for the user stories:
+
+| Preset | What changes |
+| --- | --- |
+| Balanced | Defaults: 30 in walkways. |
+| Child-safe | Large open play area (at least 6 ft across); fragile, sharp and tall pieces against walls and away from it. |
+| Wheelchair accessible | 36 in walkways and 5 ft turning space in front of every piece. |
+| Shared studio | Beds spread apart for privacy, desks grouped for group work, more open space. |
+
+When the room is too tight for a preset's rules the layout is still returned, with warnings saying what falls short.
 
 ### Tests
 
 ```bash
 npm test -- --watchAll=false          # frontend
 cd server && npm test                 # API
-cd server && .venv/Scripts/python -m pytest tests   # layout generator
+cd server && .venv/Scripts/python -m pytest tests   # layout engine
 ```
 
 ## User Stories
@@ -85,10 +129,8 @@ I use React package to implement the frame. All codes in master branch.
 
 ## Roadmap
 
-- Return structured layouts (positions, sizes, orientations) and render them in the browser instead of a static image.
-- Let users set room and furniture sizes, doors and windows.
-- Constraint-based layout scoring (clearances, accessibility, reachability) with presets for the user stories above.
 - Turn the free-text notes into layout constraints with an LLM, and explain each suggested layout.
+- Drag furniture to adjust a layout, compare several layouts side by side, export to PNG or JSON.
 
 ## References
 [1] L. Yanhua, “Optimizing Space with AI: Intelligent Design Solutions for Soft Furnishings and Decor,” International Journal of Science and Engineering Applications, vol. 13, no. 7, Jun. 2024, doi: https://doi.org/10.7753/ijsea1307.1008

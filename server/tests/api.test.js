@@ -1,7 +1,5 @@
 const { test, before, after } = require('node:test');
 const assert = require('node:assert');
-const fs = require('fs');
-const path = require('path');
 const app = require('../index');
 
 let server;
@@ -15,6 +13,22 @@ before(async () => {
 
 after(() => server.close());
 
+const request = {
+  preset: 'default',
+  room: {
+    width: 16,
+    length: 14,
+    doors: [{ wall: 'bottom', offset: 1, width: 3 }],
+    windows: [{ wall: 'top', offset: 5, width: 5 }],
+  },
+  furniture: [
+    { type: 'bed', count: 1 },
+    { type: 'desk', count: 1 },
+  ],
+  notes: 'api test',
+  seed: 3,
+};
+
 function post(body) {
   return fetch(`${baseUrl}/api/generate`, {
     method: 'POST',
@@ -23,30 +37,40 @@ function post(body) {
   });
 }
 
-test('generates a layout image and serves it', async () => {
-  const res = await post({ bed: 1, desk: 1, tv: 1, wardrobe: 1, notes: 'api test' });
+test('serves the form options', async () => {
+  const res = await fetch(`${baseUrl}/api/options`);
   assert.strictEqual(res.status, 200);
-  const { imageUrl } = await res.json();
-  assert.match(imageUrl, /^\/generated\/[0-9a-f]{32}\.png$/);
-
-  const image = await fetch(`${baseUrl}${imageUrl}`);
-  assert.strictEqual(image.status, 200);
-  assert.strictEqual(image.headers.get('content-type'), 'image/png');
-
-  fs.rmSync(path.join(__dirname, '..', imageUrl), { force: true });
+  const options = await res.json();
+  assert.ok(options.furniture.bed.width > 0);
+  assert.deepStrictEqual(Object.keys(options.presets).sort(), ['accessible', 'child_safe', 'default', 'shared']);
+  assert.ok(options.defaults.room.doors.length > 0);
 });
 
-test('each request gets its own image', async () => {
-  const body = { bed: 1, desk: 0, tv: 0, wardrobe: 0 };
-  const [a, b] = await Promise.all([post(body), post(body)]);
-  const urlA = (await a.json()).imageUrl;
-  const urlB = (await b.json()).imageUrl;
-  assert.notStrictEqual(urlA, urlB);
-  for (const url of [urlA, urlB]) fs.rmSync(path.join(__dirname, '..', url), { force: true });
+test('generates a layout', async () => {
+  const res = await post(request);
+  assert.strictEqual(res.status, 200);
+  const layout = await res.json();
+  assert.deepStrictEqual(layout.furniture.map((f) => f.type), ['bed', 'desk']);
+  assert.strictEqual(layout.room.width, 16);
+  assert.strictEqual(layout.seed, 3);
+  assert.strictEqual(layout.notes, 'api test');
+  assert.ok(Array.isArray(layout.warnings));
+});
+
+test('ignores fields outside the request schema', async () => {
+  const res = await post({ ...request, extra: 'x'.repeat(100) });
+  assert.strictEqual(res.status, 200);
 });
 
 test('rejects invalid input with 400 and a message', async () => {
-  for (const body of [{}, { bed: '' }, { bed: -1 }, { bed: 'abc' }]) {
+  const invalid = [
+    {},
+    { ...request, furniture: [] },
+    { ...request, preset: 'nope' },
+    { ...request, room: { ...request.room, width: -1 } },
+    { ...request, furniture: [{ type: 'sofa', count: 1, width: 15, depth: 3 }], room: { ...request.room, width: 10, length: 10 } },
+  ];
+  for (const body of invalid) {
     const res = await post(body);
     assert.strictEqual(res.status, 400, JSON.stringify(body));
     const { error } = await res.json();
