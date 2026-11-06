@@ -68,3 +68,13 @@
     background-color: #218838;
   }
   
+  .form-container button:disabled {
+    background-color: #8fbf9a;
+    cursor: wait;
+  }
+
+  .form-error {
+    margin: 0;
+    color: #b00020;
+    font-size: 14px;
+  }
